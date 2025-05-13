@@ -1,0 +1,3651 @@
+class Game {
+    constructor() {
+        this.canvas = document.getElementById('gameCanvas');
+        this.ctx = this.canvas.getContext('2d');
+        this.menu = document.getElementById('menu');
+        this.startButton = document.getElementById('startButton');
+        this.gameStarted = false;
+        
+        // Set initial canvas size to viewport
+        this.resizeCanvas();
+        
+        // Initialize player
+        this.player = {
+            x: this.canvas.width / 2,
+            y: this.canvas.height - 50,
+            width: 40,
+            height: 40,
+            velocityX: 0,
+            velocityY: 0,
+            targetVelocityX: 0,
+            targetVelocityY: 0,
+            maxSpeed: 20,
+            acceleration: 0.8, // Reduced from 2.0 to 0.8 for slower acceleration
+            deceleration: 0.05, // Reduced from 0.12 to 0.05 for slower deceleration
+            turnSpeed: 0.08, // Reduced from 0.2 to 0.08 for slower turning
+            rotation: 0, // Current rotation angle
+            targetRotation: 0, // Target rotation angle
+            rotationSpeed: 0.05, // Reduced from 0.1 to 0.05 for slower rotation change
+            hitbox: 15, // Hitbox radius for collision detection
+            health: 3, // Player starts with 3 hearts
+            invulnerable: false, // Invulnerability after getting hit
+            invulnerableTime: 1500, // 1.5 seconds of invulnerability
+            lastHitTime: 0, // Track when player was last hit
+            devModeInvulnerable: false, // Track if invulnerability was enabled via developer mode
+            previousX: null // Track player's previous x position
+        };
+        
+        // Initialize enemies array and spawn timing
+        this.enemies = [];
+        this.lastEnemySpawn = 0;
+        this.enemySpawnInterval = 2000; // Spawn every 2 seconds
+        
+        // Custom boss flag
+        this.customBossSpawned = false;
+        
+        // Mouse tracking
+        this.mouseX = 0;
+        this.mouseY = 0;
+        this.mouseVelocityX = 0;
+        this.mouseVelocityY = 0;
+        this.lastMouseMoveTime = 0;
+        
+        // Initialize bullets array and timing
+        this.bullets = [];
+        this.lastBulletTime = 0;
+        this.bulletInterval = 400; // Fire every 400ms (0.4 seconds) - changed from 500ms
+        this.shootingEnabled = true; // Track if shooting is enabled
+        
+        // Initialize score system
+        this.score = 0;
+        this.gameStartTime = 0;
+        this.gameRunTime = 0; // Track total game running time in seconds
+        
+        // Initialize particles array for explosion effect
+        this.particles = [];
+        this.isExploding = false;
+        this.explosionDuration = 1000; // 1 second explosion
+        this.explosionStartTime = 0;
+        
+        // Initialize floating texts array
+        this.floatingTexts = [];
+        
+        // Add vibration properties
+        this.vibrationStartTime = 0;
+        this.vibrationDuration = 300; // 300ms of vibration
+        this.vibrationIntensity = 4; // Reduced from 8 to 4 pixels
+        this.vibrationRotation = 0.05; // Reduced from 0.1 to 0.05
+        
+        // Add health boost properties
+        this.planesDestroyed = 0;
+        this.healthBoosts = [];
+        this.maxHealth = 3;
+        this.lastHeartDropTime = 0; // Track when the last heart was dropped
+        this.heartDropCooldown = 10000; // 10 second cooldown between possible heart drops
+        
+        // Add debug mode flag
+        this.debugMode = false;
+        
+        // Add developer mode flag and fps tracking
+        this.developerMode = false;
+        this.lastFrameTime = 0;
+        this.frameCount = 0;
+        this.fps = 0;
+        this.fpsUpdateTime = 0;
+        this.enemyTimeOffset = 0; // For advancing enemy spawn timing in developer mode
+        
+        // Add progression system properties
+        this.level = 1;
+        this.experience = 0;
+        this.experienceToNextLevel = 500;
+        this.scoreMultiplier = 1;
+        
+        // Level-based difficulty scaling
+        this.baseEnemySpawnInterval = 2000;
+        this.baseEnemySpeed = 2;
+        this.enemyTypes = ['basic'];
+        
+        // Upgrade system
+        this.upgrades = {
+            maxHealth: 1,
+            bulletDamage: 1,
+            fireRateBoost: 0, // Track percentage boost instead of multiplier
+            baseBulletInterval: 400, // Store original bullet interval - changed from 500ms
+            moveSpeed: 1,
+            scoreMultiplier: 1,
+            doubleShot: false,
+            doubleDamageChance: 0,
+            xpMultiplier: 1.0,
+            spreadShot: false,
+            improvedHandling: false, // Flag for whether the upgrade has been taken at least once
+            handlingBoost: 0 // Counter for handling boost percentage
+        };
+        
+        // Add spread shot counter
+        this.spreadShotCounter = 0;
+        
+        // Power-up system
+        this.activePowerups = [];
+        this.powerupDuration = 10000; // 10 seconds
+        
+        // Add enemy bullets array
+        this.enemyBullets = [];
+        
+        // Add enemy missiles array
+        this.enemyMissiles = [];
+        
+        // Add powerups array
+        this.powerups = [];
+        this.spreadShotActive = false;
+        
+        // Add boss engine particles
+        this.bossEngineParticles = [];
+        
+        // Add boss health bar properties
+        this.showBossHealthBar = false;
+        this.bossMaxHealth = 400;
+        this.bossCurrentHealth = 0;
+        
+        // Set up event listeners
+        this.startButton.addEventListener('click', () => this.startGame());
+        this.canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
+        window.addEventListener('resize', () => this.handleResize());
+        window.addEventListener('keydown', (e) => this.handleKeyDown(e));
+        
+        // Hide canvas initially
+        this.canvas.style.display = 'none';
+        
+        // Add pause for upgrade flag
+        this.pausedForUpgrade = false;
+    }
+    
+    resizeCanvas() {
+        this.canvas.width = window.innerWidth;
+        this.canvas.height = window.innerHeight;
+    }
+    
+    handleResize() {
+        if (this.gameStarted) {
+            this.resizeCanvas();
+            // Keep player within bounds after resize
+            this.player.x = Math.min(this.player.x, this.canvas.width - this.player.width / 2);
+            this.player.y = Math.min(this.player.y, this.canvas.height - this.player.height / 2);
+        }
+    }
+    
+    startGame() {
+        this.gameStarted = true;
+        this.menu.style.display = 'none';
+        this.canvas.style.display = 'block';
+        
+        // Reset and start score
+        this.score = 0;
+        this.gameStartTime = Date.now();
+        this.gameRunTime = 0; // Reset game run time
+        
+        // Reset player health
+        this.player.health = 3;
+        this.player.invulnerable = false;
+        this.player.lastHitTime = 0;
+        
+        // Spawn custom boss
+        this.spawnCustomBoss();
+        
+        // Request pointer lock
+        this.canvas.requestPointerLock = this.canvas.requestPointerLock || 
+                                        this.canvas.mozRequestPointerLock || 
+                                        this.canvas.webkitRequestPointerLock;
+        
+        this.canvas.requestPointerLock();
+        
+        // Set up pointer lock change event
+        document.addEventListener('pointerlockchange', this.handlePointerLockChange.bind(this), false);
+        document.addEventListener('mozpointerlockchange', this.handlePointerLockChange.bind(this), false);
+        document.addEventListener('webkitpointerlockchange', this.handlePointerLockChange.bind(this), false);
+        
+        this.gameLoop();
+    }
+    
+    handlePointerLockChange() {
+        if (document.pointerLockElement === this.canvas || 
+            document.mozPointerLockElement === this.canvas || 
+            document.webkitPointerLockElement === this.canvas) {
+            // Pointer is locked
+            this.canvas.style.cursor = 'none';
+        } else {
+            // Pointer is unlocked - only go back to menu if not paused for upgrade
+            if (!this.pausedForUpgrade) {
+                this.gameStarted = false;
+                this.canvas.style.display = 'none';
+                this.menu.style.display = 'block';
+            }
+        }
+    }
+    
+    handleMouseMove(e) {
+        if (!this.gameStarted) return;
+        
+        // Get movement from pointer lock and increase sensitivity
+        this.mouseVelocityX = (e.movementX || e.mozMovementX || e.webkitMovementX || 0) * 2.0;
+        this.mouseVelocityY = (e.movementY || e.mozMovementY || e.webkitMovementY || 0) * 2.0;
+        
+        // Update last mouse move time
+        this.lastMouseMoveTime = Date.now();
+        
+        // Calculate target velocity based on mouse movement
+        this.player.targetVelocityX = this.mouseVelocityX * this.player.acceleration;
+        this.player.targetVelocityY = this.mouseVelocityY * this.player.acceleration;
+        
+        // Limit target speed
+        const targetSpeed = Math.sqrt(this.player.targetVelocityX * this.player.targetVelocityX + 
+                                    this.player.targetVelocityY * this.player.targetVelocityY);
+        if (targetSpeed > this.player.maxSpeed) {
+            const ratio = this.player.maxSpeed / targetSpeed;
+            this.player.targetVelocityX *= ratio;
+            this.player.targetVelocityY *= ratio;
+        }
+    }
+    
+    handleKeyDown(e) {
+        // Log key press info for debugging
+        console.log('Key pressed:', e.key, 'Shift key:', e.shiftKey, 'KeyCode:', e.keyCode);
+        
+        // Toggle developer mode when '0' key is pressed
+        if (e.key === '0') {
+            this.developerMode = !this.developerMode;
+            this.floatingTexts.push({
+                value: this.developerMode ? 'Developer Mode: ON' : 'Developer Mode: OFF',
+                x: this.player.x,
+                y: this.player.y - 50,
+                life: 1.0
+            });
+        }
+        // Toggle shooting when '9' key is pressed
+        else if (e.key === '9' && !e.shiftKey) {
+            this.shootingEnabled = !this.shootingEnabled;
+            this.floatingTexts.push({
+                value: this.shootingEnabled ? 'Shooting: ON' : 'Shooting: OFF',
+                x: this.player.x,
+                y: this.player.y - 50,
+                life: 1.0
+            });
+        }
+        // Set boss health to 150 when Shift+9 is pressed (in developer mode)
+        else if ((e.key === '9' || e.key === '(' || e.keyCode === 57) && e.shiftKey) {
+            console.log('Shift+9 detected!');
+            if (this.developerMode && this.gameStarted && this.customBossSpawned) {
+                console.log('Conditions met, setting boss health to 150');
+                // Find the boss
+                for (const enemy of this.enemies) {
+                    if (enemy.type === 'customBoss') {
+                        // Set health to exactly 150
+                        enemy.hitPoints = 150;
+                        this.bossCurrentHealth = 150;
+                        
+                        // Show a notification
+                        this.floatingTexts.push({
+                            value: "Boss Health Set To 150",
+                            x: this.canvas.width / 2,
+                            y: 100,
+                            life: 1.5,
+                            color: '#FF0000',
+                            size: 24
+                        });
+                        console.log('Boss health updated to 150');
+                        break;
+                    }
+                }
+            } else {
+                console.log('Conditions not met: Dev mode:', this.developerMode, 
+                            'Game started:', this.gameStarted, 
+                            'Boss spawned:', this.customBossSpawned);
+            }
+        }
+        // Toggle invincibility when '8' key is pressed
+        else if (e.key === '8') {
+            this.player.devModeInvulnerable = !this.player.devModeInvulnerable;
+            this.player.invulnerable = this.player.devModeInvulnerable;
+            this.floatingTexts.push({
+                value: this.player.devModeInvulnerable ? 'Invincibility: ON' : 'Invincibility: OFF',
+                x: this.player.x,
+                y: this.player.y - 50,
+                life: 1.0
+            });
+        }
+        // Increase enemy spawn time by 10 seconds when 'O' key is pressed (in developer mode)
+        else if (e.key === 'o' || e.key === 'O') {
+            if (this.developerMode && this.gameStarted) {
+                this.enemyTimeOffset += 10;
+                this.floatingTexts.push({
+                    value: `Enemy Time +10s (Now: ${Math.floor(this.gameRunTime + this.enemyTimeOffset)}s)`,
+                    x: this.player.x,
+                    y: this.player.y - 50,
+                    life: 1.0
+                });
+            }
+        }
+        // Instant level up when 'P' key is pressed (in developer mode)
+        else if (e.key === 'p' || e.key === 'P') {
+            if (this.developerMode && this.gameStarted) {
+                // Force level up and show upgrade menu
+                this.level++;
+                this.floatingTexts.push({
+                    value: `Dev Level Up! Now Level ${this.level}`,
+                    x: this.canvas.width / 2,
+                    y: this.canvas.height / 2,
+                    life: 2.0,
+                    size: 48,
+                    color: '#FFD700'
+                });
+                
+                // Show upgrade options
+                this.showUpgradeOptions();
+            }
+        }
+        // Toggle debug mode when 'D' key is pressed
+        else if (e.key === 'D' || e.key === 'd') {
+            this.debugMode = !this.debugMode;
+            this.floatingTexts.push({
+                value: this.debugMode ? 'Debug Mode: ON' : 'Debug Mode: OFF',
+                x: this.player.x,
+                y: this.player.y - 50,
+                life: 1.0
+            });
+        }
+    }
+    
+    updatePlayer() {
+        // Update target rotation based on horizontal velocity
+        // Changed to use wing height difference instead of rotation
+        this.player.targetRotation = -this.player.velocityX * (this.player.height / 2) / this.player.maxSpeed;
+        
+        // Smoothly interpolate current rotation towards target rotation
+        this.player.rotation += (this.player.targetRotation - this.player.rotation) * this.player.rotationSpeed;
+        
+        // Check if mouse hasn't moved in the last frame
+        if (Date.now() - this.lastMouseMoveTime > 16) { // 16ms = ~60fps
+            // Gradually reduce target velocity when no input
+            this.player.targetVelocityX *= (1 - this.player.deceleration);
+            this.player.targetVelocityY *= (1 - this.player.deceleration);
+            
+            // Force stop target velocity when very small
+            if (Math.abs(this.player.targetVelocityX) < 0.1) this.player.targetVelocityX = 0;
+            if (Math.abs(this.player.targetVelocityY) < 0.1) this.player.targetVelocityY = 0;
+        }
+        
+        // Smoothly interpolate current velocity towards target velocity
+        this.player.velocityX += (this.player.targetVelocityX - this.player.velocityX) * this.player.turnSpeed;
+        this.player.velocityY += (this.player.targetVelocityY - this.player.velocityY) * this.player.turnSpeed;
+        
+        // Force stop when velocity is very small
+        if (Math.abs(this.player.velocityX) < 0.1) this.player.velocityX = 0;
+        if (Math.abs(this.player.velocityY) < 0.1) this.player.velocityY = 0;
+        
+        // Update position
+        this.player.x += this.player.velocityX;
+        this.player.y += this.player.velocityY;
+        
+        // Keep player within canvas bounds
+        if (this.player.x < this.player.width / 2) {
+            this.player.x = this.player.width / 2;
+            this.player.velocityX = 0;
+            this.player.targetVelocityX = 0;
+        }
+        if (this.player.x > this.canvas.width - this.player.width / 2) {
+            this.player.x = this.canvas.width - this.player.width / 2;
+            this.player.velocityX = 0;
+            this.player.targetVelocityX = 0;
+        }
+        if (this.player.y < this.player.height / 2) {
+            this.player.y = this.player.height / 2;
+            this.player.velocityY = 0;
+            this.player.targetVelocityY = 0;
+        }
+        if (this.player.y > this.canvas.height - this.player.height / 2) {
+            this.player.y = this.canvas.height - this.player.height / 2;
+            this.player.velocityY = 0;
+            this.player.targetVelocityY = 0;
+        }
+    }
+    
+    drawPlayer() {
+        this.ctx.save();
+        
+        // Calculate vibration offset
+        let vibrationX = 0;
+        let vibrationY = 0;
+        let vibrationRot = 0;
+        const timeSinceVibration = Date.now() - this.vibrationStartTime;
+        if (timeSinceVibration < this.vibrationDuration) {
+            const intensity = this.vibrationIntensity * (1 - timeSinceVibration / this.vibrationDuration);
+            vibrationX = (Math.random() - 0.5) * intensity * 2;
+            vibrationY = (Math.random() - 0.5) * intensity * 2;
+            vibrationRot = (Math.random() - 0.5) * this.vibrationRotation * intensity;
+        }
+        
+        this.ctx.translate(this.player.x + vibrationX, this.player.y + vibrationY);
+        this.ctx.rotate(vibrationRot);
+        
+        if (this.player.invulnerable) {
+            const timeSinceHit = Date.now() - this.player.lastHitTime;
+            if (Math.floor(timeSinceHit / 100) % 2 === 0) {
+                this.ctx.globalAlpha = 0.5;
+            }
+        }
+        
+        this.ctx.fillStyle = 'white';
+        
+        this.ctx.beginPath();
+        this.ctx.moveTo(0, -this.player.height / 2);
+        this.ctx.lineTo(-this.player.width / 2, this.player.height / 2 + this.player.rotation);
+        this.ctx.lineTo(-this.player.width / 3, this.player.height / 2);
+        this.ctx.lineTo(0, this.player.height / 2.5);
+        this.ctx.lineTo(this.player.width / 3, this.player.height / 2);
+        this.ctx.lineTo(this.player.width / 2, this.player.height / 2 - this.player.rotation);
+        this.ctx.closePath();
+        this.ctx.fill();
+        
+        // Only draw hitbox points in debug mode
+        if (this.debugMode) {
+            const points = this.getWingPoints(this.player);
+            this.ctx.fillStyle = 'rgba(255, 0, 0, 0.8)';
+            for (const point of points) {
+                this.ctx.beginPath();
+                this.ctx.arc(point.x - this.player.x, point.y - this.player.y, 2, 0, Math.PI * 2);
+                this.ctx.fill();
+            }
+        }
+        
+        this.ctx.restore();
+    }
+    
+    spawnEnemy() {
+        // Skip normal enemy spawning if custom boss mode is active
+        if (this.customBossSpawned) {
+            return;
+        }
+        
+        const now = Date.now();
+        if (now - this.lastEnemySpawn > this.enemySpawnInterval) {
+            // Update available enemy types based on game runtime
+            this.updateAvailableEnemyTypes();
+            
+            // Randomly select enemy type based on available types
+            const enemyType = this.enemyTypes[Math.floor(Math.random() * this.enemyTypes.length)];
+            
+            let enemy = {
+                x: Math.random() * (this.canvas.width - 30) + 15,
+                y: -30,
+                width: 75,
+                height: 62,
+                type: enemyType,
+                hitFlashTime: 0
+            };
+            
+            // Set properties based on enemy type
+            switch (enemyType) {
+                case 'scout':
+                    enemy = {
+                        ...enemy,
+                        speed: 2.0,
+                        color: '#00FF00',
+                        hitPoints: 2,
+                        width: 50,
+                        height: 40,
+                        experienceValue: 200  // Increased from 150 to 200
+                    };
+                    break;
+                    
+                case 'tank':
+                    enemy = {
+                        ...enemy,
+                        speed: 1,
+                        color: '#606060', // Darker gray than the basic enemy (#808080)
+                        hitPoints: 8,
+                        width: 100,
+                        height: 80,
+                        experienceValue: 300,
+                        hasTurret: true,
+                        turretAngle: 0,
+                        lastTurretShot: 0,
+                        turretShootInterval: 2500 // Shoot every 2.5 seconds
+                    };
+                    break;
+                    
+                case 'shooter':
+                    enemy = {
+                        ...enemy,
+                        speed: 1.5,
+                        color: '#FF4500',
+                        hitPoints: 4,
+                        width: 80,
+                        height: 65,
+                        experienceValue: 200,
+                        lastShot: 0,
+                        shootInterval: 2000
+                    };
+                    break;
+                    
+                case 'boss':
+                    enemy = {
+                        ...enemy,
+                        speed: 0.5,
+                        color: '#800080',
+                        hitPoints: 20,
+                        width: 150,
+                        height: 120,
+                        experienceValue: 1000,
+                        lastShot: 0,
+                        shootInterval: 1500,
+                        pattern: 'sine',
+                        patternOffset: 0
+                    };
+                    break;
+                    
+                default: // basic enemy
+                    enemy = {
+                        ...enemy,
+                        speed: 2,
+                        color: '#808080',
+                        hitPoints: 3,
+                        experienceValue: 100,
+                        // 50% chance to have missile launchers
+                        hasMissileLaunchers: Math.random() < 0.5,
+                        lastMissileTime: 0,
+                        missileInterval: 2000 // Fire missiles every 2 seconds
+                    };
+                    
+                    // Increase experience value for missile-equipped planes
+                    if (enemy.hasMissileLaunchers) {
+                        enemy.experienceValue = 150;  // Increased from 100 to 150
+                    }
+            }
+            
+            this.enemies.push(enemy);
+            this.lastEnemySpawn = now;
+        }
+    }
+    
+    updateEnemies() {
+        // Update game runtime
+        if (this.gameStarted) {
+            this.gameRunTime = (Date.now() - this.gameStartTime) / 1000; // Convert to seconds
+        }
+        
+        // Only spawn new regular enemies if not in custom boss mode
+        if (!this.customBossSpawned) {
+        this.spawnEnemy();
+        }
+        
+        // Update existing enemies
+        for (let i = this.enemies.length - 1; i >= 0; i--) {
+            const enemy = this.enemies[i];
+            
+            if (enemy.type === 'customBoss') {
+                const now = Date.now();
+                
+                // Custom boss movement - move down to target Y position
+                if (enemy.y < enemy.targetY) {
+                    enemy.y += enemy.speed;
+                    
+                    // Turn off entrance invincibility when boss reaches its target Y position
+                    if (enemy.y >= enemy.targetY && enemy.invincibleDuringEntrance) {
+                        enemy.invincibleDuringEntrance = false;
+                    }
+                } else {
+                    // Update speed variation
+                    if (now - enemy.speedVariationTimer > enemy.speedVariationInterval) {
+                        // Set new target speed between 0.01 and 0.04 (slower to faster)
+                        enemy.targetWaveSpeed = enemy.baseWaveSpeed * (0.5 + Math.random() * 1.5);
+                        enemy.speedVariationTimer = now;
+                    }
+                    
+                    // Update amplitude variation
+                    if (now - enemy.amplitudeVariationTimer > enemy.amplitudeVariationInterval) {
+                        // Set new target amplitude between minAmplitude and maxAmplitude
+                        enemy.targetWaveAmplitude = enemy.minAmplitude + Math.random() * (enemy.maxAmplitude - enemy.minAmplitude);
+                        enemy.amplitudeVariationTimer = now;
+                    }
+                    
+                    // Smoothly interpolate current values towards target values
+                    enemy.waveSpeed += (enemy.targetWaveSpeed - enemy.waveSpeed) * enemy.transitionSpeed;
+                    enemy.waveAmplitude += (enemy.targetWaveAmplitude - enemy.waveAmplitude) * enemy.transitionSpeed;
+                    
+                    // Once at target Y position, move in a smooth sine wave pattern with variable properties
+                    enemy.waveOffset += enemy.waveSpeed;
+                    // Calculate new X position using sine wave
+                    const safeAmplitude = Math.min(enemy.waveAmplitude, this.canvas.width/2 - enemy.width/2 - 10);
+                    enemy.x = this.canvas.width/2 + Math.sin(enemy.waveOffset) * safeAmplitude;
+                }
+                
+                // Generate engine particles
+                if (now - enemy.lastEngineParticleTime > enemy.engineParticleInterval) {
+                    this.spawnBossEngineParticles(enemy);
+                    enemy.lastEngineParticleTime = now;
+                }
+
+                // Add special laser attack when boss health drops to 150 or below
+                if (enemy.hitPoints <= 150 && !enemy.laserAttackActive && !enemy.laserAttackCooldown) {
+                    // Start a new laser attack sequence
+                    enemy.laserAttackActive = true;
+                    enemy.isPreparingLaser = true;
+                    enemy.laserWarningStartTime = now;
+                } 
+                
+                // Handle the laser attack phases
+                if (enemy.laserAttackActive) {
+                    if (enemy.isPreparingLaser) {
+                        // Warning phase
+                        if (now - enemy.laserWarningStartTime >= enemy.laserWarningDuration) {
+                            // Warning phase is over, start firing
+                            enemy.isPreparingLaser = false;
+                            enemy.laserFiringStartTime = now;
+                        }
+                    } else {
+                        // Firing phase
+                        if (now - enemy.laserFiringStartTime >= enemy.laserFiringDuration) {
+                            // Firing phase is over, reset attack
+                            enemy.laserAttackActive = false;
+                            // Set a cooldown before this can happen again (4-7 seconds)
+                            enemy.laserAttackCooldown = now + 4000 + Math.random() * 3000;
+                        } else {
+                            // Check collision with player during firing
+                            this.checkLaserCollision(enemy);
+                        }
+                    }
+                } 
+                // Check if cooldown period is over
+                else if (enemy.laserAttackCooldown && now > enemy.laserAttackCooldown) {
+                    // Cooldown is over, reset cooldown flag
+                    enemy.laserAttackCooldown = null;
+                }
+
+                // Calculate turret angles to face the player
+                const leftTurretX = enemy.x - enemy.width/3;
+                const rightTurretX = enemy.x + enemy.width/3;
+                const turretsY = enemy.y + enemy.height/10;
+                
+                // Calculate angles from each turret to the player
+                const leftDx = this.player.x - leftTurretX;
+                const leftDy = this.player.y - turretsY;
+                enemy.leftTurretAngle = Math.atan2(leftDy, leftDx);
+                
+                const rightDx = this.player.x - rightTurretX;
+                const rightDy = this.player.y - turretsY;
+                enemy.rightTurretAngle = Math.atan2(rightDy, rightDx);
+
+                // Fire missiles from wing turrets
+                if (now - enemy.lastMissileTime > enemy.missileInterval) {
+                    // Define the boss missile size - slightly larger than regular missiles
+                    const missileWidth = 6; // Increased from 4 to 6 to make boss missiles larger
+                    const missileHeight = 18; // Increased from 15 to 18 to make boss missiles longer
+                    
+                    // Left wing missile - fired in direction of player
+                    this.enemyMissiles.push({
+                        x: enemy.x - enemy.width/3, // Left turret position
+                        y: enemy.y + enemy.height/10,
+                        width: missileWidth,
+                        height: missileHeight,
+                        speed: enemy.missileSpeed,
+                        damage: enemy.missileDamage,
+                        color: '#FF3300', // Same color as regular missiles
+                        angle: enemy.leftTurretAngle,
+                        smokeTimer: 0,
+                        isBossMissile: true, // Flag to identify boss missiles
+                        health: 3, // Boss missiles require 3 hits to destroy
+                        // Add velocity components based on angle
+                        velocityX: Math.cos(enemy.leftTurretAngle) * enemy.missileSpeed,
+                        velocityY: Math.sin(enemy.leftTurretAngle) * enemy.missileSpeed
+                    });
+
+                    // Right wing missile - fired in direction of player
+                    this.enemyMissiles.push({
+                        x: enemy.x + enemy.width/3, // Right turret position
+                        y: enemy.y + enemy.height/10,
+                        width: missileWidth,
+                        height: missileHeight,
+                        speed: enemy.missileSpeed,
+                        damage: enemy.missileDamage,
+                        color: '#FF3300', // Same color as regular missiles
+                        angle: enemy.rightTurretAngle,
+                        smokeTimer: 0,
+                        isBossMissile: true, // Flag to identify boss missiles
+                        health: 3, // Boss missiles require 3 hits to destroy
+                        // Add velocity components based on angle
+                        velocityX: Math.cos(enemy.rightTurretAngle) * enemy.missileSpeed,
+                        velocityY: Math.sin(enemy.rightTurretAngle) * enemy.missileSpeed
+                    });
+
+                    enemy.lastMissileTime = now;
+                }
+                
+                // Modified barrage attack logic for burst firing
+                if (enemy.burstActive) {
+                    // If in burst mode, check if it's time for next burst
+                    if (now - enemy.lastBurstTime > enemy.burstCooldown) {
+                        // Fire a barrage
+                        this.spawnBossBarrage(enemy);
+                        enemy.burstCount++;
+                        enemy.lastBurstTime = now;
+                        
+                        // Check if burst sequence is complete
+                        if (enemy.burstCount >= enemy.maxBurstCount) {
+                            enemy.burstActive = false;
+                            enemy.lastBarrageTime = now;
+                            // Set next barrage interval
+                            enemy.barrageInterval = 6000 + Math.random() * 2000; // 6-8 seconds
+                        }
+                    }
+                } else {
+                    // Check if it's time to start a new burst sequence
+                    if (now - enemy.lastBarrageTime > enemy.barrageInterval) {
+                        // Start a new burst sequence
+                        enemy.burstActive = true;
+                        enemy.burstCount = 0;
+                        // Set a new random number of bursts (3-5)
+                        enemy.maxBurstCount = Math.floor(3 + Math.random() * 3);
+                        // Fire first barrage immediately
+                        this.spawnBossBarrage(enemy);
+                        enemy.burstCount++;
+                        enemy.lastBurstTime = now;
+                    }
+                }
+            } else {
+                // Basic vertical movement for regular enemies
+            enemy.y += enemy.speed;
+            
+            // Special movement patterns
+            switch (enemy.type) {
+                case 'scout':
+                    // Zigzag movement with slower lateral movement
+                    enemy.x += Math.sin(enemy.y * 0.01) * 10;
+                    break;
+                    
+                case 'boss':
+                    // Sine wave movement
+                    if (enemy.pattern === 'sine') {
+                        enemy.patternOffset += 0.02;
+                        enemy.x = this.canvas.width/2 + Math.sin(enemy.patternOffset) * (this.canvas.width/3);
+                    }
+                    break;
+            }
+            
+            // Enemy shooting
+            if (enemy.type === 'shooter' || enemy.type === 'boss') {
+                const now = Date.now();
+                if (now - enemy.lastShot > enemy.shootInterval) {
+                    this.spawnEnemyBullet(enemy);
+                    enemy.lastShot = now;
+                }
+            }
+            
+            // Tank turret targeting and shooting
+            if (enemy.type === 'tank' && enemy.hasTurret) {
+                const now = Date.now();
+                
+                // Update turret angle to face player
+                const dx = this.player.x - enemy.x;
+                const dy = this.player.y - enemy.y;
+                enemy.turretAngle = Math.atan2(dy, dx); // Switch dx and dy order for correct angle
+                
+                // Shoot turret projectile if enough time has passed
+                if (now - enemy.lastTurretShot > enemy.turretShootInterval) {
+                    this.spawnTurretProjectile(enemy);
+                    enemy.lastTurretShot = now;
+                }
+            }
+            
+            // Enemy missile launching (for basic enemies with missile launchers)
+            if (enemy.type === 'basic' && enemy.hasMissileLaunchers) {
+                const now = Date.now();
+                if (now - enemy.lastMissileTime > enemy.missileInterval) {
+                    this.spawnEnemyMissile(enemy);
+                    enemy.lastMissileTime = now;
+                }
+            }
+            
+            // Remove if off screen
+            if (enemy.y > this.canvas.height + enemy.height) {
+                this.enemies.splice(i, 1);
+                }
+            }
+        }
+        
+        // Update boss engine particles
+        this.updateBossEngineParticles();
+        
+        // Update enemy missiles
+        this.updateEnemyMissiles();
+    }
+    
+    spawnEnemyBullet(enemy) {
+        const bullet = {
+            x: enemy.x,
+            y: enemy.y + enemy.height/2,
+            width: 4,
+            height: 12,
+            speed: 5,
+            color: enemy.type === 'boss' ? '#FF00FF' : '#FF4500'
+        };
+        
+        if (enemy.type === 'boss') {
+            // Boss shoots 3 bullets in a spread
+            for (let angle = -15; angle <= 15; angle += 15) {
+                const radians = angle * Math.PI / 180;
+                this.enemyBullets.push({
+                    ...bullet,
+                    velocityX: Math.sin(radians) * bullet.speed,
+                    velocityY: Math.cos(radians) * bullet.speed
+                });
+            }
+        } else {
+            // Regular enemies shoot straight down
+            this.enemyBullets.push({
+                ...bullet,
+                velocityX: 0,
+                velocityY: bullet.speed
+            });
+        }
+    }
+    
+    spawnEnemyMissile(enemy) {
+        // Define thinner missile dimensions
+        const missileWidth = 4; // Reduced from 6 to make thinner
+        const missileHeight = 15; // Keep the same length
+        
+        // Spawn left missile
+        this.enemyMissiles.push({
+            x: enemy.x - enemy.width/4, // Moved closer to center (was enemy.width/2.5)
+            y: enemy.y + enemy.height/4,
+            width: missileWidth,
+            height: missileHeight,
+            speed: 5,
+            damage: 1,
+            color: '#FF3300',
+            angle: 0, // Pointing down (toward player)
+            smokeTimer: 0,
+            // Add turret tracking properties
+            leftTurretAngle: enemy.leftTurretAngle,
+            rightTurretAngle: enemy.rightTurretAngle
+        });
+        
+        // Spawn right missile
+        this.enemyMissiles.push({
+            x: enemy.x + enemy.width/4, // Moved closer to center (was enemy.width/2.5)
+            y: enemy.y + enemy.height/4,
+            width: missileWidth,
+            height: missileHeight,
+            speed: 5,
+            damage: 1,
+            color: '#FF3300',
+            angle: 0, // Pointing down (toward player)
+            smokeTimer: 0,
+            // Add turret tracking properties
+            leftTurretAngle: enemy.leftTurretAngle,
+            rightTurretAngle: enemy.rightTurretAngle
+        });
+    }
+    
+    spawnTurretProjectile(enemy) {
+        // Spawn a small red ball projectile from the tank's turret
+        this.enemyBullets.push({
+            x: enemy.x,
+            y: enemy.y,
+            radius: 6, // Using radius for circle drawing
+            speed: 3,
+            damage: 1,
+            color: '#FF0000',
+            isTurretProjectile: true,
+            velocityX: Math.cos(enemy.turretAngle) * 3, // Use cos for X
+            velocityY: Math.sin(enemy.turretAngle) * 3  // Use sin for Y
+        });
+    }
+    
+    updateEnemyMissiles() {
+        const now = Date.now();
+        
+        // Filter missiles - remove any that are off screen or have invalid properties
+        // but don't be too strict to avoid removing legitimate missiles
+        this.enemyMissiles = this.enemyMissiles.filter(missile => {
+            // Check if missile has valid position
+            if (typeof missile.x !== 'number' || typeof missile.y !== 'number') {
+                return false;
+            }
+            
+            // Check if missile is far outside reasonable screen bounds
+            if (missile.x < -50 || 
+                missile.x > this.canvas.width + 50 || 
+                missile.y < -50 || 
+                missile.y > this.canvas.height + 150) {
+                return false;
+            }
+            
+            // Basic validation of required properties
+            if (!missile.width || !missile.height || !missile.speed) {
+                return false;
+            }
+            
+            return true;
+        });
+        
+        for (let i = this.enemyMissiles.length - 1; i >= 0; i--) {
+            const missile = this.enemyMissiles[i];
+            
+            // Move missile based on velocity components if they exist, otherwise straight down
+            if (missile.velocityX !== undefined && missile.velocityY !== undefined) {
+                missile.x += missile.velocityX;
+                missile.y += missile.velocityY;
+            } else {
+                missile.y += missile.speed;
+            }
+            
+            // Create smoke particles periodically
+            missile.smokeTimer++;
+            if (missile.smokeTimer % 3 === 0) {
+                // Calculate the missile angle for proper smoke trail positioning
+                let angle;
+                if (missile.velocityX !== undefined && missile.velocityY !== undefined) {
+                    angle = Math.atan2(missile.velocityY, missile.velocityX);
+                } else {
+                    angle = missile.angle + Math.PI;
+                }
+                
+                // Position smoke at the rear of the missile based on its angle
+                const offsetX = -Math.cos(angle) * missile.height/2;
+                const offsetY = -Math.sin(angle) * missile.height/2;
+                
+                // Scale smoke particles with missile size
+                const particleSize = missile.isBossMissile ? 
+                    3 + Math.random() * 3 : // Larger smoke for boss missiles
+                    2 + Math.random() * 2;  // Regular smoke for normal missiles
+                
+                this.particles.push({
+                    x: missile.x + offsetX,
+                    y: missile.y + offsetY,
+                    vx: (Math.random() - 0.5) * 0.5,
+                    vy: (Math.random() - 0.5) * 0.5,
+                    size: particleSize,
+                    color: 'rgba(200, 200, 200, 0.8)',
+                    life: 0.5
+                });
+            }
+            
+            // Check collision with player
+            if (!this.player.invulnerable) {
+                const dx = this.player.x - missile.x;
+                const dy = this.player.y - missile.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance < this.player.width/2) {
+                    // Create explosion
+                    this.createSmallExplosion(missile.x, missile.y);
+                    
+                    // Remove missile
+                    this.enemyMissiles.splice(i, 1);
+                    
+                    // Damage player
+                    this.player.health--;
+                    this.player.invulnerable = true;
+                    this.player.lastHitTime = now;
+                    
+                    // Start screen vibration
+                    this.vibrationStartTime = now;
+                    
+                    // Check if player is dead
+                    if (this.player.health <= 0) {
+                        this.gameOver();
+                    }
+                    
+                    continue;
+                }
+            }
+            
+            // Check if missile is off screen
+            if (missile.y > this.canvas.height + missile.height || 
+                missile.y < -missile.height || 
+                missile.x < -missile.width || 
+                missile.x > this.canvas.width + missile.width) {
+                this.enemyMissiles.splice(i, 1);
+            }
+        }
+    }
+    
+    spawnPowerup(x, y) {
+        const types = ['rapidFire', 'shield', 'speedBoost', 'doubleScore']; // Removed spreadShot
+        const type = types[Math.floor(Math.random() * types.length)];
+        
+        this.powerups.push({
+            x,
+            y,
+            type,
+            width: 30,
+            height: 30,
+            speed: 1,
+            collected: false
+        });
+    }
+    
+    updatePowerups() {
+        // Update active powerups
+        for (let i = this.activePowerups.length - 1; i >= 0; i--) {
+            const powerup = this.activePowerups[i];
+            if (Date.now() - powerup.startTime > this.powerupDuration) {
+                this.deactivatePowerup(powerup.type);
+                this.activePowerups.splice(i, 1);
+            }
+        }
+        
+        // Update falling powerups
+        for (let i = this.powerups.length - 1; i >= 0; i--) {
+            const powerup = this.powerups[i];
+            powerup.y += powerup.speed;
+            
+            // Check collection
+            if (!powerup.collected) {
+                const dx = this.player.x - powerup.x;
+                const dy = this.player.y - powerup.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance < this.player.width/2 + powerup.width/2) {
+                    this.activatePowerup(powerup.type);
+                    powerup.collected = true;
+                    this.powerups.splice(i, 1);
+                }
+            }
+            
+            // Remove if off screen
+            if (powerup.y > this.canvas.height + powerup.height) {
+                this.powerups.splice(i, 1);
+            }
+        }
+    }
+    
+    activatePowerup(type) {
+        const powerup = {
+            type,
+            startTime: Date.now()
+        };
+        
+        // Apply powerup effect
+        switch (type) {
+            case 'rapidFire':
+                this.bulletInterval /= 2;
+                break;
+            case 'spreadShot':
+                this.spreadShotActive = true;
+                break;
+            case 'shield':
+                this.player.invulnerable = true;
+                break;
+            case 'speedBoost':
+                this.player.maxSpeed *= 1.5;
+                break;
+            case 'doubleScore':
+                this.scoreMultiplier *= 2;
+                break;
+        }
+        
+        this.activePowerups.push(powerup);
+        
+        // Show powerup message
+        this.floatingTexts.push({
+            value: `${type} activated!`,
+            x: this.player.x,
+            y: this.player.y - 50,
+            life: 1.0,
+            color: '#FFD700'
+        });
+    }
+    
+    deactivatePowerup(type) {
+        // Remove powerup effect
+        switch (type) {
+            case 'rapidFire':
+                this.bulletInterval *= 2;
+                break;
+            case 'spreadShot':
+                this.spreadShotActive = false;
+                break;
+            case 'shield':
+                this.player.invulnerable = false;
+                break;
+            case 'speedBoost':
+                this.player.maxSpeed /= 1.5;
+                break;
+            case 'doubleScore':
+                this.scoreMultiplier /= 2;
+                break;
+        }
+    }
+    
+    drawPowerups() {
+        for (const powerup of this.powerups) {
+            if (!powerup.collected) {
+                this.ctx.save();
+                this.ctx.translate(powerup.x, powerup.y);
+                
+                // All powerups are blue now
+                this.ctx.fillStyle = '#0080FF';
+                
+                // Draw powerup icon based on type
+                switch (powerup.type) {
+                    case 'rapidFire':
+                        this.drawRapidFireIcon(0, 0, 15);
+                        break;
+                    case 'shield':
+                        this.drawShieldIcon(0, 0, 15);
+                        break;
+                    case 'speedBoost':
+                        this.drawBootsIcon(0, 0, 15);
+                        break;
+                    case 'doubleScore':
+                        this.drawMultiplier(0, 0, 15);
+                        break;
+                }
+                
+                this.ctx.restore();
+            }
+        }
+    }
+    
+    // Helper methods for drawing powerup icons
+    drawStar(x, y, points, outer, inner) {
+        this.ctx.beginPath();
+        for (let i = 0; i < points * 2; i++) {
+            const radius = i % 2 === 0 ? outer : inner;
+            const angle = (i * Math.PI) / points;
+            if (i === 0) {
+                this.ctx.moveTo(x + radius * Math.cos(angle), y + radius * Math.sin(angle));
+            } else {
+                this.ctx.lineTo(x + radius * Math.cos(angle), y + radius * Math.sin(angle));
+            }
+        }
+        this.ctx.closePath();
+        this.ctx.fill();
+    }
+    
+    drawTriangle(x, y, size) {
+        this.ctx.beginPath();
+        this.ctx.moveTo(x, y - size);
+        this.ctx.lineTo(x - size, y + size);
+        this.ctx.lineTo(x + size, y + size);
+        this.ctx.closePath();
+        this.ctx.fill();
+    }
+    
+    drawShield(x, y, size) {
+        this.ctx.beginPath();
+        this.ctx.arc(x, y, size, 0, Math.PI * 2);
+        this.ctx.fill();
+    }
+    
+    drawLightning(x, y, size) {
+        this.ctx.beginPath();
+        this.ctx.moveTo(x - size/2, y - size);
+        this.ctx.lineTo(x + size/2, y);
+        this.ctx.lineTo(x - size/2, y);
+        this.ctx.lineTo(x + size/2, y + size);
+        this.ctx.closePath();
+        this.ctx.fill();
+    }
+    
+    drawMultiplier(x, y, size) {
+        this.ctx.font = `${size}px Arial`;
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText('×2', x, y);
+    }
+    
+    drawEnemies() {
+        for (const enemy of this.enemies) {
+            this.ctx.save();
+            
+            let vibrationX = 0;
+            let vibrationY = 0;
+            let vibrationRot = 0;
+            const timeSinceVibration = Date.now() - this.vibrationStartTime;
+            if (timeSinceVibration < this.vibrationDuration) {
+                const intensity = this.vibrationIntensity * (1 - timeSinceVibration / this.vibrationDuration);
+                vibrationX = (Math.random() - 0.5) * intensity * 2;
+                vibrationY = (Math.random() - 0.5) * intensity * 2;
+                vibrationRot = (Math.random() - 0.5) * this.vibrationRotation * intensity;
+            }
+            
+            this.ctx.translate(enemy.x + vibrationX, enemy.y + vibrationY);
+            
+            if (enemy.type === 'customBoss') {
+                // Draw custom boss based on the provided image with exact proportions
+                if (Date.now() - enemy.hitFlashTime < 100) {
+                    this.ctx.fillStyle = '#FFFFFF';
+                } else {
+                    this.ctx.fillStyle = enemy.color;
+                }
+                
+                // Save context for outline drawing
+                this.ctx.save();
+                this.ctx.lineWidth = 5;
+                this.ctx.strokeStyle = enemy.outlineColor || '#2c2c2c';
+                
+                // Draw the main triangular body
+                this.ctx.beginPath();
+                // Main triangular shape (body)
+                this.ctx.moveTo(0, -enemy.height/2); // Top point
+                this.ctx.lineTo(-enemy.width/2.5, enemy.height/4); // Bottom left
+                this.ctx.lineTo(enemy.width/2.5, enemy.height/4); // Bottom right
+                this.ctx.closePath();
+                this.ctx.fill();
+                this.ctx.stroke();
+                
+                // Draw the central spine/body that extends vertically
+                this.ctx.beginPath();
+                // Top portion (narrower)
+                this.ctx.moveTo(0, -enemy.height/2);
+                this.ctx.lineTo(-enemy.width/20, -enemy.height/2.2);
+                this.ctx.lineTo(-enemy.width/16, -enemy.height/3);
+                this.ctx.lineTo(enemy.width/16, -enemy.height/3);
+                this.ctx.lineTo(enemy.width/20, -enemy.height/2.2);
+                this.ctx.closePath();
+                this.ctx.fill();
+                this.ctx.stroke();
+                
+                // Middle portion (central body)
+                this.ctx.beginPath();
+                this.ctx.rect(-enemy.width/10, -enemy.height/3.5, enemy.width/5, enemy.height/1.8);
+                this.ctx.fill();
+                this.ctx.stroke();
+                
+                // Bottom portion (narrower)
+                this.ctx.beginPath();
+                this.ctx.moveTo(-enemy.width/12, enemy.height/4);
+                this.ctx.lineTo(-enemy.width/14, enemy.height/2.2);
+                this.ctx.lineTo(enemy.width/14, enemy.height/2.2);
+                this.ctx.lineTo(enemy.width/12, enemy.height/4);
+                this.ctx.closePath();
+                this.ctx.fill();
+                this.ctx.stroke();
+                
+                // Draw the cockpit window (darker oval)
+                this.ctx.fillStyle = '#404040'; // Dark gray
+                this.ctx.beginPath();
+                this.ctx.ellipse(0, 0, enemy.width/14, enemy.height/5, 0, 0, Math.PI * 2);
+                this.ctx.fill();
+                this.ctx.stroke();
+                
+                // Draw the wings with precise angles
+                this.ctx.fillStyle = enemy.color;
+                
+                // Left wing
+                this.ctx.beginPath();
+                this.ctx.moveTo(-enemy.width/12, -enemy.height/8);
+                this.ctx.lineTo(-enemy.width/2.2, -enemy.height/10);
+                this.ctx.lineTo(-enemy.width/2, 0);
+                this.ctx.lineTo(-enemy.width/2.2, enemy.height/10);
+                this.ctx.lineTo(-enemy.width/12, enemy.height/8);
+                this.ctx.closePath();
+                this.ctx.fill();
+                this.ctx.stroke();
+                
+                // Right wing
+                this.ctx.beginPath();
+                this.ctx.moveTo(enemy.width/12, -enemy.height/8);
+                this.ctx.lineTo(enemy.width/2.2, -enemy.height/10);
+                this.ctx.lineTo(enemy.width/2, 0);
+                this.ctx.lineTo(enemy.width/2.2, enemy.height/10);
+                this.ctx.lineTo(enemy.width/12, enemy.height/8);
+                this.ctx.closePath();
+                this.ctx.fill();
+                this.ctx.stroke();
+                
+                // Draw turrets on wings instead of plain engine circles
+                
+                // Left turret
+                this.ctx.save();
+                this.ctx.translate(-enemy.width/3, 0); // Position at left wing
+                this.ctx.rotate(enemy.leftTurretAngle); // Rotate to face the player
+                
+                // Draw turret base (circle)
+                this.ctx.fillStyle = '#696969'; // Dark gray
+                this.ctx.beginPath();
+                this.ctx.arc(0, 0, enemy.width/16, 0, Math.PI * 2);
+                this.ctx.fill();
+                this.ctx.stroke();
+                
+                // Draw turret barrel
+                this.ctx.fillStyle = '#555555'; // Darker gray for barrel
+                this.ctx.fillRect(0, -enemy.width/40, enemy.width/10, enemy.width/20);
+                
+                // Draw turret barrel end
+                this.ctx.fillStyle = '#444444'; // Even darker gray for barrel end
+                this.ctx.fillRect(enemy.width/10, -enemy.width/32, enemy.width/20, enemy.width/16);
+                
+                this.ctx.restore();
+                
+                // Right turret
+                this.ctx.save();
+                this.ctx.translate(enemy.width/3, 0); // Position at right wing
+                this.ctx.rotate(enemy.rightTurretAngle); // Rotate to face the player
+                
+                // Draw turret base (circle)
+                this.ctx.fillStyle = '#696969'; // Dark gray
+                this.ctx.beginPath();
+                this.ctx.arc(0, 0, enemy.width/16, 0, Math.PI * 2);
+                this.ctx.fill();
+                this.ctx.stroke();
+                
+                // Draw turret barrel
+                this.ctx.fillStyle = '#555555'; // Darker gray for barrel
+                this.ctx.fillRect(0, -enemy.width/40, enemy.width/10, enemy.width/20);
+                
+                // Draw turret barrel end
+                this.ctx.fillStyle = '#444444'; // Even darker gray for barrel end
+                this.ctx.fillRect(enemy.width/10, -enemy.width/32, enemy.width/20, enemy.width/16);
+                
+                this.ctx.restore();
+                
+                // Draw laser attack if active
+                if (enemy.laserAttackActive) {
+                    const laserOriginX = 0; // Center of boss
+                    const laserOriginY = enemy.height/2.2; // Bottom rectangle
+                    
+                    if (enemy.isPreparingLaser) {
+                        // Warning phase - draw a pulsing red line
+                        const warningProgress = (Date.now() - enemy.laserWarningStartTime) / enemy.laserWarningDuration;
+                        const warningAlpha = 0.3 + Math.sin(warningProgress * Math.PI * 10) * 0.3;
+                        
+                        this.ctx.strokeStyle = `rgba(255, 0, 0, ${warningAlpha})`;
+                        this.ctx.lineWidth = 4;
+                        this.ctx.beginPath();
+                        this.ctx.moveTo(laserOriginX, laserOriginY);
+                        this.ctx.lineTo(laserOriginX, this.canvas.height);
+                        this.ctx.stroke();
+                        
+                        // Draw charging indicator
+                        this.ctx.fillStyle = `rgba(255, 0, 0, ${warningAlpha + 0.2})`;
+                        this.ctx.beginPath();
+                        this.ctx.arc(laserOriginX, laserOriginY, 10 * warningProgress, 0, Math.PI * 2);
+                        this.ctx.fill();
+                    } else {
+                        // Firing phase - draw powerful laser beam
+                        const laserGradient = this.ctx.createLinearGradient(
+                            laserOriginX, laserOriginY,
+                            laserOriginX, this.canvas.height
+                        );
+                        laserGradient.addColorStop(0, 'rgba(255, 60, 60, 1.0)');
+                        laserGradient.addColorStop(0.5, 'rgba(255, 200, 200, 0.9)');
+                        laserGradient.addColorStop(1, 'rgba(255, 60, 60, 0.7)');
+                        
+                        // Draw main laser beam
+                        this.ctx.fillStyle = laserGradient;
+                        this.ctx.fillRect(laserOriginX - 5, laserOriginY, 10, this.canvas.height - laserOriginY);
+                        
+                        // Draw bright core of laser
+                        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+                        this.ctx.fillRect(laserOriginX - 2, laserOriginY, 4, this.canvas.height - laserOriginY);
+                        
+                        // Draw laser impact particles
+                        if (Math.random() < 0.3) {
+                            for (let i = 0; i < 3; i++) {
+                                const particleY = laserOriginY + Math.random() * (this.canvas.height - laserOriginY);
+                                this.particles.push({
+                                    x: laserOriginX + (Math.random() - 0.5) * 10,
+                                    y: particleY,
+                                    vx: (Math.random() - 0.5) * 3,
+                                    vy: (Math.random() - 0.5) * 3,
+                                    size: 2 + Math.random() * 3,
+                                    color: `hsl(${Math.random() * 30 + 10}, 100%, 70%)`,
+                                    life: 0.3
+                                });
+                            }
+                        }
+                        
+                        // Draw laser hitbox in debug mode
+                        if (this.debugMode) {
+                            // Convert to world coordinates for the hitbox visualization
+                            const worldLaserOriginX = enemy.x;
+                            const worldLaserOriginY = enemy.y + enemy.height/2.2;
+                            
+                            // Get the laser width from the collision detection logic
+                            const laserWidth = 6; // Must match the width in checkLaserCollision
+                            const laserLeftEdge = worldLaserOriginX - laserWidth/2;
+                            const laserRightEdge = worldLaserOriginX + laserWidth/2;
+                            
+                            // Draw semi-transparent red rectangle for laser hitbox
+                            this.ctx.save();
+                            this.ctx.resetTransform(); // Reset to world coordinates
+                            this.ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
+                            this.ctx.fillRect(
+                                laserLeftEdge,
+                                worldLaserOriginY,
+                                laserWidth,
+                                this.canvas.height - worldLaserOriginY
+                            );
+                            
+                            // Draw edge lines for clarity
+                            this.ctx.strokeStyle = 'rgba(255, 0, 0, 0.8)';
+                            this.ctx.lineWidth = 1;
+                            
+                            // Left edge
+                            this.ctx.beginPath();
+                            this.ctx.moveTo(laserLeftEdge, worldLaserOriginY);
+                            this.ctx.lineTo(laserLeftEdge, this.canvas.height);
+                            this.ctx.stroke();
+                            
+                            // Right edge
+                            this.ctx.beginPath();
+                            this.ctx.moveTo(laserRightEdge, worldLaserOriginY);
+                            this.ctx.lineTo(laserRightEdge, this.canvas.height);
+                            this.ctx.stroke();
+                            
+                            this.ctx.restore();
+                        }
+                    }
+                }
+                
+                // Restore context
+                this.ctx.restore();
+            } else {
+            this.ctx.rotate(Math.PI + vibrationRot);
+            
+            if (Date.now() - enemy.hitFlashTime < 100) {
+                this.ctx.fillStyle = '#FFFFFF';
+            } else {
+                this.ctx.fillStyle = enemy.color;
+            }
+            
+            // Draw main body (fuselage)
+            this.ctx.beginPath();
+            
+            // Nose
+            this.ctx.moveTo(0, -enemy.height/2);
+            
+            // Fuselage
+            this.ctx.lineTo(-enemy.width/16, -enemy.height/2.2);
+            this.ctx.lineTo(-enemy.width/16, enemy.height/2.2);
+            this.ctx.lineTo(0, enemy.height/2);
+            this.ctx.lineTo(enemy.width/16, enemy.height/2.2);
+            this.ctx.lineTo(enemy.width/16, -enemy.height/2.2);
+            this.ctx.closePath();
+            this.ctx.fill();
+            
+            // Draw left wing
+            this.ctx.beginPath();
+            this.ctx.moveTo(-enemy.width/16, -enemy.height/5);
+            
+            // Left wing front edge (adjusted for thinner profile)
+            this.ctx.bezierCurveTo(
+                -enemy.width/4, -enemy.height/5,
+                -enemy.width/2, -enemy.height/8,
+                -enemy.width/2, 0
+            );
+            
+            // Left wing back edge (adjusted for thinner profile)
+            this.ctx.bezierCurveTo(
+                -enemy.width/2, enemy.height/16,
+                -enemy.width/4, enemy.height/12,
+                -enemy.width/16, enemy.height/8
+            );
+            
+            this.ctx.closePath();
+            this.ctx.fill();
+            
+            // Draw right wing
+            this.ctx.beginPath();
+            this.ctx.moveTo(enemy.width/16, -enemy.height/5);
+            
+            // Right wing front edge (adjusted for thinner profile)
+            this.ctx.bezierCurveTo(
+                enemy.width/4, -enemy.height/5,
+                enemy.width/2, -enemy.height/8,
+                enemy.width/2, 0
+            );
+            
+            // Right wing back edge (adjusted for thinner profile)
+            this.ctx.bezierCurveTo(
+                enemy.width/2, enemy.height/16,
+                enemy.width/4, enemy.height/12,
+                enemy.width/16, enemy.height/8
+            );
+            
+            this.ctx.closePath();
+            this.ctx.fill();
+            
+            // Draw tail stabilizers
+            this.ctx.beginPath();
+            this.ctx.moveTo(-enemy.width/16, enemy.height/3);
+            this.ctx.lineTo(-enemy.width/4, enemy.height/2);
+            this.ctx.lineTo(-enemy.width/16, enemy.height/2);
+            this.ctx.closePath();
+            this.ctx.fill();
+            
+            this.ctx.beginPath();
+            this.ctx.moveTo(enemy.width/16, enemy.height/3);
+            this.ctx.lineTo(enemy.width/4, enemy.height/2);
+            this.ctx.lineTo(enemy.width/16, enemy.height/2);
+            this.ctx.closePath();
+            this.ctx.fill();
+            
+            // Draw cockpit
+            this.ctx.fillStyle = '#404040';
+            this.ctx.beginPath();
+            this.ctx.ellipse(0, -enemy.height/6, enemy.width/20, enemy.height/8, 0, 0, Math.PI * 2);
+            this.ctx.fill();
+            
+            // Draw missile launchers if this enemy has them
+            if (enemy.type === 'basic' && enemy.hasMissileLaunchers) {
+                // Draw left missile launcher - moved closer to center
+                this.ctx.fillStyle = '#333333';
+                this.ctx.fillRect(-enemy.width/4 - 3, -enemy.height/8, 6, enemy.height/4);
+                
+                // Draw right missile launcher - moved closer to center
+                this.ctx.fillRect(enemy.width/4 - 3, -enemy.height/8, 6, enemy.height/4);
+            }
+            
+            // Draw tank turret if the enemy type is tank
+            if (enemy.type === 'tank' && enemy.hasTurret) {
+                // Save context to restore rotation after drawing turret
+                this.ctx.save();
+                
+                // Add Math.PI (180 degrees) to aim the turret toward the player
+                this.ctx.rotate(enemy.turretAngle + Math.PI);
+                
+                // Draw turret base (circle)
+                this.ctx.fillStyle = '#404040'; // Dark gray for turret
+                this.ctx.beginPath();
+                this.ctx.arc(0, 0, enemy.width/10, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Draw turret barrel
+                this.ctx.fillRect(0, -enemy.width/30, enemy.height/3, enemy.width/15);
+                
+                // Draw turret barrel end (slightly wider)
+                this.ctx.fillStyle = '#333333'; // Even darker gray for the barrel tip
+                this.ctx.fillRect(enemy.height/3, -enemy.width/25, enemy.height/10, enemy.width/12.5);
+                
+                this.ctx.restore();
+            }
+            
+            // Only draw hitbox points in debug mode
+            if (this.debugMode) {
+                const points = this.getWingPoints(enemy);
+                this.ctx.fillStyle = 'rgba(255, 0, 0, 0.8)';
+                for (const point of points) {
+                    this.ctx.beginPath();
+                    this.ctx.arc(point.x - enemy.x, point.y - enemy.y, 2, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    }
+                }
+            }
+            
+            // REMOVED: Draw enemy missiles (handled in game loop)
+            // this.drawEnemyMissiles(); // Removed to fix duplicate missile bug
+            
+            this.ctx.restore();
+        }
+    }
+    
+    drawEnemyMissiles() {
+        for (const missile of this.enemyMissiles) {
+            this.ctx.save();
+            
+            this.ctx.translate(missile.x, missile.y);
+            
+            // Calculate missile angle based on velocity components
+            let missileAngle;
+            if (missile.velocityX !== undefined && missile.velocityY !== undefined) {
+                // Calculate angle from velocity components
+                missileAngle = Math.atan2(missile.velocityY, missile.velocityX);
+            } else {
+                missileAngle = missile.angle + Math.PI; // Default to old behavior
+            }
+            
+            // Rotate canvas to point missile in direction of travel
+            this.ctx.rotate(missileAngle);
+            
+            // Check if missile was recently hit (within last 100ms)
+            const isFlashing = missile.hitFlashTime && Date.now() - missile.hitFlashTime < 100;
+            
+            // Draw missile body with nose pointing in direction of travel
+            this.ctx.fillStyle = isFlashing ? '#FFFFFF' : '#FF3300';
+            this.ctx.fillRect(-missile.width/2, -missile.height/2, missile.width, missile.height);
+            
+            // Scale missile parts based on missile size, adjusted for thinner missiles
+            const noseLength = missile.height * 0.22; // Increased slightly for thinner missiles
+            const finWidth = missile.width * 1.8;    // Increased for proportional fins
+            const finLength = missile.height * 0.25; // 25% of the missile height
+            
+            // Draw nose cone pointing in travel direction (front of missile)
+            this.ctx.beginPath();
+            this.ctx.moveTo(missile.height/2, 0); // Tip at front
+            this.ctx.lineTo(missile.height/2 - noseLength, -missile.width/2); // Left corner
+            this.ctx.lineTo(missile.height/2 - noseLength, missile.width/2); // Right corner
+            this.ctx.fillStyle = isFlashing ? '#FFFFFF' : '#CC0000';
+            this.ctx.fill();
+            
+            // Draw fins at rear of missile
+            this.ctx.fillStyle = isFlashing ? '#FFFFFF' : '#CC0000';
+            
+            // Left fin
+            this.ctx.beginPath();
+            this.ctx.moveTo(-missile.height/4, -missile.width/2);
+            this.ctx.lineTo(-missile.height/2, -finWidth);
+            this.ctx.lineTo(-missile.height/2, -missile.width/2);
+            this.ctx.fill();
+            
+            // Right fin
+            this.ctx.beginPath();
+            this.ctx.moveTo(-missile.height/4, missile.width/2);
+            this.ctx.lineTo(-missile.height/2, finWidth);
+            this.ctx.lineTo(-missile.height/2, missile.width/2);
+            this.ctx.fill();
+            
+            // Draw engine glow at rear
+            const glowRadius = missile.isBossMissile ? missile.width * 1.5 : missile.width * 1.3;
+            const gradient = this.ctx.createRadialGradient(
+                -missile.height/2, 0,
+                0,
+                -missile.height/2, 0,
+                glowRadius
+            );
+            gradient.addColorStop(0, isFlashing ? '#FFFFFF' : '#FF9500');
+            gradient.addColorStop(1, isFlashing ? 'rgba(255, 255, 255, 0)' : 'rgba(255, 149, 0, 0)');
+            this.ctx.fillStyle = gradient;
+            this.ctx.beginPath();
+            this.ctx.arc(-missile.height/2, 0, glowRadius, 0, Math.PI * 2);
+            this.ctx.fill();
+            
+            this.ctx.restore();
+        }
+    }
+    
+    checkCollisions() {
+        // Check if temporary invulnerability should expire
+        if (this.player.invulnerable) {
+            // If invulnerability is from developer mode, keep it on
+            if (this.player.devModeInvulnerable) {
+                // Still check for boss collisions to knock player back
+                this.checkBossCollisions();
+                return;
+            }
+            
+            // Otherwise, check if temporary invulnerability should expire
+            const timeSinceHit = Date.now() - this.player.lastHitTime;
+            if (timeSinceHit > this.player.invulnerableTime) {
+                this.player.invulnerable = false;
+            } else {
+                // Still check for boss collisions to knock player back
+                this.checkBossCollisions();
+            return;
+            }
+        }
+        
+        // Check each enemy for collision with player
+        for (let i = this.enemies.length - 1; i >= 0; i--) {
+            const enemy = this.enemies[i];
+            
+            // Get all collision points for both planes
+            const playerPoints = this.getWingPoints(this.player);
+            const enemyPoints = this.getWingPoints(enemy);
+            
+            // Check for collision between any points
+            for (const playerPoint of playerPoints) {
+                for (const enemyPoint of enemyPoints) {
+                    const dx = playerPoint.x - enemyPoint.x;
+                    const dy = playerPoint.y - enemyPoint.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    // Collision occurs when points are within 2 pixels of each other
+                    if (distance < 2) {
+                        this.handlePlayerHit(enemy, i);
+                        return;
+                    }
+                }
+            }
+        }
+    }
+    
+    // New method to check for boss collisions even when player is invulnerable
+    checkBossCollisions() {
+        for (let i = this.enemies.length - 1; i >= 0; i--) {
+            const enemy = this.enemies[i];
+            
+            // Only check boss collisions
+            if (enemy.type !== 'customBoss') continue;
+            
+            // Get all collision points for both planes
+            const playerPoints = this.getWingPoints(this.player);
+            const enemyPoints = this.getWingPoints(enemy);
+            
+            // Check for collision between any points
+            for (const playerPoint of playerPoints) {
+                for (const enemyPoint of enemyPoints) {
+                    const dx = playerPoint.x - enemyPoint.x;
+                    const dy = playerPoint.y - enemyPoint.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    // Collision occurs when points are within 2 pixels of each other
+                    if (distance < 2) {
+                        // Apply boss knockback even when invulnerable
+                        this.applyBossKnockback(enemy);
+                        return;
+                    }
+                }
+            }
+        }
+    }
+    
+    // New method to apply boss knockback without affecting invulnerability
+    applyBossKnockback(enemy) {
+        // Calculate bounce direction
+        const dx = this.player.x - enemy.x;
+        const dy = this.player.y - enemy.y;
+        
+        // Normalize the direction vector
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        const normalizedDx = dx / distance;
+        const normalizedDy = dy / distance;
+        
+        // Apply bounce velocity
+        const bounceForce = 15;
+        this.player.velocityX = normalizedDx * bounceForce;
+        this.player.velocityY = normalizedDy * bounceForce;
+        
+        // Slight screen shake for feedback
+        this.vibrationStartTime = Date.now();
+        this.vibrationDuration = 150;
+        this.vibrationIntensity = 2;
+    }
+    
+    getWingPoints(plane) {
+        const points = [];
+        const isPlayer = plane === this.player;
+        
+        // Front points (nose and cockpit area)
+        points.push({
+            x: plane.x,
+            y: plane.y - plane.height/2
+        });
+        
+        // Left wing points
+        const leftWingStartX = plane.x - plane.width/2;
+        const leftWingEndX = plane.x - plane.width/3;
+        const leftWingY = plane.y;
+        
+        // Add points along the left wing's curved shape
+        for (let i = 0; i <= 5; i++) {
+            const t = i / 5;
+            const x = leftWingStartX + (leftWingEndX - leftWingStartX) * t;
+            const y = leftWingY - (isPlayer ? plane.height/4 : plane.height/3) * (1 - t * 0.5);
+            points.push({ x, y });
+        }
+        
+        // Left wing tip
+        points.push({
+            x: plane.x - plane.width/2,
+            y: plane.y
+        });
+        
+        // Left side fuselage points
+        for (let i = 0; i <= 3; i++) {
+            const t = i / 3;
+            const x = plane.x - plane.width/3;
+            const y = plane.y + plane.height/2 * t;
+            points.push({ x, y });
+        }
+        
+        // Back points (tail area)
+        points.push({
+            x: plane.x,
+            y: plane.y + plane.height/2
+        });
+        
+        // Right side fuselage points
+        for (let i = 0; i <= 3; i++) {
+            const t = i / 3;
+            const x = plane.x + plane.width/3;
+            const y = plane.y + plane.height/2 * t;
+            points.push({ x, y });
+        }
+        
+        // Right wing points
+        const rightWingStartX = plane.x + plane.width/3;
+        const rightWingEndX = plane.x + plane.width/2;
+        const rightWingY = plane.y;
+        
+        // Add points along the right wing's curved shape
+        for (let i = 0; i <= 5; i++) {
+            const t = i / 5;
+            const x = rightWingStartX + (rightWingEndX - rightWingStartX) * t;
+            const y = rightWingY - (isPlayer ? plane.height/4 : plane.height/3) * (1 - t * 0.5);
+            points.push({ x, y });
+        }
+        
+        // Right wing tip
+        points.push({
+            x: plane.x + plane.width/2,
+            y: plane.y
+        });
+        
+        // Add points for tail stabilizers if it's an enemy plane
+        if (!isPlayer) {
+            // Left tail stabilizer
+            points.push({
+                x: plane.x - plane.width/4,
+                y: plane.y + plane.height/2
+            });
+            points.push({
+                x: plane.x - plane.width/3,
+                y: plane.y + plane.height/1.5
+            });
+            
+            // Right tail stabilizer
+            points.push({
+                x: plane.x + plane.width/4,
+                y: plane.y + plane.height/2
+            });
+            points.push({
+                x: plane.x + plane.width/3,
+                y: plane.y + plane.height/1.5
+            });
+        }
+        
+        return points;
+    }
+    
+    handlePlayerHit(enemy, enemyIndex) {
+        // For boss collisions, make player bounce off instead of taking damage
+        if (enemy.type === 'customBoss') {
+            // Calculate bounce direction
+            const dx = this.player.x - enemy.x;
+            const dy = this.player.y - enemy.y;
+            
+            // Normalize the direction vector
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            const normalizedDx = dx / distance;
+            const normalizedDy = dy / distance;
+            
+            // Apply bounce velocity
+            const bounceForce = 15;
+            this.player.velocityX = normalizedDx * bounceForce;
+            this.player.velocityY = normalizedDy * bounceForce;
+            
+            // Make player briefly invulnerable to prevent multiple bounces
+            this.player.invulnerable = true;
+            this.player.lastHitTime = Date.now();
+            this.player.invulnerableTime = 500; // Short invulnerability period
+            
+            // Slight screen shake for feedback
+            this.vibrationStartTime = Date.now();
+            this.vibrationDuration = 150;
+            this.vibrationIntensity = 2;
+            
+            return; // Skip the rest of the collision handling
+        }
+        
+        // Normal collision handling for regular enemies
+        // Create explosion at enemy position
+        this.createSmallExplosion(enemy.x, enemy.y);
+        
+        // Remove the enemy
+        this.enemies.splice(enemyIndex, 1);
+        
+        // Reduce player health
+        this.player.health--;
+        
+        // Start screen vibration
+        this.vibrationStartTime = Date.now();
+        
+        // Make player invulnerable
+        this.player.invulnerable = true;
+        this.player.lastHitTime = Date.now();
+        
+        // Check if player is dead
+        if (this.player.health <= 0) {
+            this.gameOver();
+        }
+    }
+    
+    createExplosionParticles(x, y) {
+        const numParticles = 30;
+        for (let i = 0; i < numParticles; i++) {
+            const angle = (Math.PI * 2 * i) / numParticles;
+            const speed = 2 + Math.random() * 3;
+            this.particles.push({
+                x: x,
+                y: y,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                size: 3 + Math.random() * 3,
+                color: `hsl(${Math.random() * 30 + 15}, 100%, 50%)`, // Orange/red colors
+                life: 1.0 // Life will decrease over time
+            });
+        }
+    }
+    
+    updateParticles() {
+        for (let i = this.particles.length - 1; i >= 0; i--) {
+            const particle = this.particles[i];
+            
+            // Update position
+            particle.x += particle.vx;
+            particle.y += particle.vy;
+            
+            // Update life
+            particle.life -= 0.02;
+            
+            // Remove dead particles
+            if (particle.life <= 0) {
+                this.particles.splice(i, 1);
+            }
+        }
+    }
+    
+    drawParticles() {
+        for (const particle of this.particles) {
+            this.ctx.fillStyle = particle.color;
+            this.ctx.globalAlpha = particle.life;
+            this.ctx.beginPath();
+            this.ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+            this.ctx.fill();
+        }
+        this.ctx.globalAlpha = 1.0;
+    }
+    
+    updateScore() {
+        // Calculate base score from elapsed time
+        const elapsedSeconds = (Date.now() - this.gameStartTime) / 1000;
+        const baseScore = Math.floor(elapsedSeconds * 100);
+        
+        // Set level multiplier to 1.0 (removing level-based scaling)
+        this.scoreMultiplier = 1.0;
+        
+        // Apply score multiplier from upgrades only
+        this.score = Math.floor(baseScore * this.scoreMultiplier * this.upgrades.scoreMultiplier);
+    }
+    
+    drawScore() {
+        this.ctx.fillStyle = 'white';
+        
+        if (this.isExploding) {
+            // Draw final score in the center during explosion
+            this.ctx.textAlign = 'center';
+            this.ctx.font = 'bold 48px Arial';
+            this.ctx.fillText(`Final Score: ${this.score}`, this.canvas.width/2, this.canvas.height/2);
+            
+            // Draw "Game Over" text above the score
+            this.ctx.font = 'bold 64px Arial';
+            this.ctx.fillText('Game Over', this.canvas.width/2, this.canvas.height/2 - 80);
+        } else {
+            // Draw score only
+            this.ctx.font = 'bold 32px Arial';
+            this.ctx.textAlign = 'right';
+            this.ctx.fillText(`Score: ${this.score}`, this.canvas.width - 20, 50);
+            
+            // Draw boss health bar if boss exists
+            if (this.showBossHealthBar) {
+                this.drawBossHealthBar();
+            }
+            
+            // Only draw experience bar if boss isn't present
+            if (!this.showBossHealthBar) {
+            // Draw experience bar at the top center - bigger
+            const barWidth = 400;
+            const barHeight = 20;
+            const barX = (this.canvas.width - barWidth) / 2;
+            const barY = 15;
+            
+            // Draw background
+            this.ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+            this.ctx.fillRect(barX, barY, barWidth, barHeight);
+            
+            // Draw progress
+            const progress = this.experience / this.experienceToNextLevel;
+            this.ctx.fillStyle = '#4A90E2';
+            this.ctx.fillRect(barX, barY, barWidth * progress, barHeight);
+            }
+        }
+    }
+    
+    updateBullets() {
+        // Create new bullet if enough time has passed and shooting is enabled
+        const now = Date.now();
+        if (this.gameStarted && this.shootingEnabled && now - this.lastBulletTime > this.bulletInterval) {
+            // Regular single shot
+            if (!this.upgrades.doubleShot) {
+                this.bullets.push({
+                    x: this.player.x,
+                    y: this.player.y - this.player.height/2, // Start at player's nose
+                    speed: 10,
+                    width: 4,
+                    height: 12
+                });
+            } 
+            // Double shot
+            else {
+                // Left bullet
+                this.bullets.push({
+                    x: this.player.x - 7, // Changed from 10 to 7 pixels for closer spacing
+                    y: this.player.y - this.player.height/2,
+                    speed: 10,
+                    width: 4,
+                    height: 12
+                });
+                
+                // Right bullet
+                this.bullets.push({
+                    x: this.player.x + 7, // Changed from 10 to 7 pixels for closer spacing
+                    y: this.player.y - this.player.height/2,
+                    speed: 10,
+                    width: 4,
+                    height: 12
+                });
+            }
+            
+            // Check for spread shot (fires every other shot)
+            if (this.upgrades.spreadShot) {
+                this.spreadShotCounter++;
+                
+                if (this.spreadShotCounter >= 2) {
+                    this.spreadShotCounter = 0;
+                    
+                    // Calculate angles for spread shots (20 degrees each side)
+                    const leftAngle = -20 * (Math.PI / 180);
+                    const rightAngle = 20 * (Math.PI / 180);
+                    
+                    // Left spread bullet
+                    this.bullets.push({
+                        x: this.player.x,
+                        y: this.player.y - this.player.height/2,
+                        speed: 10,
+                        width: 4,
+                        height: 12,
+                        velocityX: Math.sin(leftAngle) * 10,
+                        velocityY: -Math.cos(leftAngle) * 10
+                    });
+                    
+                    // Right spread bullet
+                    this.bullets.push({
+                        x: this.player.x,
+                        y: this.player.y - this.player.height/2,
+                        speed: 10,
+                        width: 4,
+                        height: 12,
+                        velocityX: Math.sin(rightAngle) * 10,
+                        velocityY: -Math.cos(rightAngle) * 10
+                    });
+                }
+            }
+            
+            this.lastBulletTime = now;
+        }
+        
+        // Update existing bullets
+        for (let i = this.bullets.length - 1; i >= 0; i--) {
+            const bullet = this.bullets[i];
+            
+            // If bullet has velocity components, use them
+            if (bullet.velocityX !== undefined && bullet.velocityY !== undefined) {
+                bullet.x += bullet.velocityX;
+                bullet.y += bullet.velocityY;
+            } else {
+                // Otherwise just move upward
+                bullet.y -= bullet.speed;
+            }
+            
+            // Remove bullet if it goes off screen
+            if (bullet.y + bullet.height < 0 || 
+                bullet.x < 0 || 
+                bullet.x > this.canvas.width || 
+                bullet.y > this.canvas.height) {
+                this.bullets.splice(i, 1);
+            }
+        }
+    }
+    
+    drawBullets() {
+        this.ctx.fillStyle = '#FFB700'; // Warmer color between yellow and orange
+        for (const bullet of this.bullets) {
+            this.ctx.fillRect(bullet.x - bullet.width/2, bullet.y, bullet.width, bullet.height);
+        }
+    }
+    
+    updateFloatingTexts() {
+        for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
+            const text = this.floatingTexts[i];
+            text.y -= 1; // Move up slowly
+            text.life -= 0.02; // Fade out
+            
+            if (text.life <= 0) {
+                this.floatingTexts.splice(i, 1);
+            }
+        }
+    }
+    
+    drawFloatingTexts() {
+        for (const text of this.floatingTexts) {
+            // Use the specified color if available, otherwise default to white
+            this.ctx.fillStyle = text.color || 'white';
+            this.ctx.globalAlpha = text.life;
+            this.ctx.font = '20px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.fillText(text.value, text.x, text.y);
+        }
+        this.ctx.globalAlpha = 1.0;
+    }
+    
+    checkBulletCollisions() {
+        for (let i = this.bullets.length - 1; i >= 0; i--) {
+            const bullet = this.bullets[i];
+            
+            // Check collision with enemies
+            for (let j = this.enemies.length - 1; j >= 0; j--) {
+                const enemy = this.enemies[j];
+                
+                // Skip damage for boss during entrance phase
+                if (enemy.type === 'customBoss' && enemy.invincibleDuringEntrance) {
+                    continue;
+                }
+                
+                // Calculate distance between bullet and enemy
+                const dx = bullet.x - enemy.x;
+                const dy = bullet.y - enemy.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                // Increased collision radius to match wing span (width/2 instead of width/3)
+                if (distance < enemy.width/2) {
+                    // Remove bullet
+                    this.bullets.splice(i, 1);
+                    
+                    // Apply bullet damage with upgrades
+                    let damage = Math.ceil(this.upgrades.bulletDamage);
+                    
+                    // Check for double damage proc
+                    if (this.upgrades.doubleDamageChance > 0 && Math.random() < this.upgrades.doubleDamageChance) {
+                        damage *= 2;
+                        // Show double damage indicator
+                        this.floatingTexts.push({
+                            value: "DOUBLE DAMAGE!",
+                            x: enemy.x,
+                            y: enemy.y - 30,
+                            life: 1.0,
+                            color: '#FF5500'
+                        });
+                    }
+                    
+                    enemy.hitPoints -= damage;
+                    enemy.hitFlashTime = Date.now();
+                    
+                    // Update boss health bar if the enemy is the boss
+                    if (enemy.type === 'customBoss') {
+                        this.bossCurrentHealth = enemy.hitPoints;
+                    }
+                    
+                    // If enemy is destroyed
+                    if (enemy.hitPoints <= 0) {
+                        // Create small explosion
+                        this.createSmallExplosion(enemy.x, enemy.y);
+                        
+                        // Hide boss health bar if the boss is destroyed
+                        if (enemy.type === 'customBoss') {
+                            this.showBossHealthBar = false;
+                        }
+                        
+                        // Add experience points - each enemy gives 100 base XP multiplied by the XP multiplier
+                        let baseXP = enemy.experienceValue || 100;
+                        let xpGained = Math.floor(baseXP * this.upgrades.xpMultiplier);
+                        this.experience += xpGained;
+                        
+                        // Show experience gained
+                        this.floatingTexts.push({
+                            value: `+${xpGained} XP`,
+                            x: enemy.x,
+                            y: enemy.y - 20,
+                            life: 1.0,
+                            color: '#4A90E2'
+                        });
+                        
+                        // Add score bonus
+                        this.score += 50;
+                        
+                        // Track planes destroyed for health drops
+                        this.planesDestroyed++;
+                        
+                        // Chance to drop health boost (every 10th plane)
+                        // Only drop if player health is not at max and enough time has passed since last heart drop
+                        const now = Date.now();
+                        if (this.planesDestroyed >= 10 && 
+                            this.player.health < this.maxHealth &&
+                            now - this.lastHeartDropTime > this.heartDropCooldown) {
+                            this.spawnHealthBoost(enemy.x, enemy.y);
+                            this.planesDestroyed = 0;
+                            this.lastHeartDropTime = now;
+                        }
+                        
+                        // Also chance to drop a powerup (1 in 20)
+                        if (Math.random() < 0.05) {
+                            this.spawnPowerup(enemy.x, enemy.y);
+                        }
+                        
+                        // Remove the enemy
+                        this.enemies.splice(j, 1);
+                        
+                        // Only one enemy hit per bullet
+                        break;
+                    }
+                    
+                    // Only one enemy hit per bullet
+                    break;
+                }
+            }
+            
+            // Check collision with enemy missiles
+            for (let j = this.enemyMissiles.length - 1; j >= 0; j--) {
+                const missile = this.enemyMissiles[j];
+                
+                // Calculate distance between bullet and missile
+                const dx = bullet.x - missile.x;
+                const dy = bullet.y - missile.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance < missile.width * 2) {
+                    // Remove bullet
+                    this.bullets.splice(i, 1);
+                    
+                    // For boss missiles, reduce health instead of immediately destroying
+                    if (missile.isBossMissile && missile.health !== undefined) {
+                        missile.health--;
+                        missile.hitFlashTime = Date.now(); // Add flash effect when hit
+                        
+                        // Small hit effect
+                        this.particles.push({
+                            x: bullet.x,
+                            y: bullet.y,
+                            vx: (Math.random() - 0.5) * 3,
+                            vy: (Math.random() - 0.5) * 3,
+                            size: 2 + Math.random() * 2,
+                            color: '#FFAA00',
+                            life: 0.5
+                        });
+                        
+                        // If missile still has health, don't destroy it
+                        if (missile.health > 0) {
+                            break;
+                        }
+                    }
+                    
+                    // Create explosion
+                    this.createSmallExplosion(missile.x, missile.y);
+                    
+                    // Remove missile
+                    this.enemyMissiles.splice(j, 1);
+                    
+                    // Add small score bonus
+                    this.score += 10;
+                    
+                    // Add floating text
+                    this.floatingTexts.push({
+                        value: '+10',
+                        x: missile.x,
+                        y: missile.y,
+                        life: 1.0
+                    });
+                    
+                    // Break since bullet is now gone
+                    break;
+                }
+            }
+        }
+    }
+    
+    createSmallExplosion(x, y) {
+        const numParticles = 15; // Fewer particles for smaller explosion
+        for (let i = 0; i < numParticles; i++) {
+            const angle = (Math.PI * 2 * i) / numParticles;
+            const speed = 1 + Math.random() * 2; // Slower particles
+            this.particles.push({
+                x: x,
+                y: y,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                size: 2 + Math.random() * 2, // Smaller particles
+                color: `hsl(${Math.random() * 30 + 15}, 100%, 50%)`,
+                life: 0.8 // Shorter life
+            });
+        }
+    }
+    
+    gameOver() {
+        if (!this.isExploding) {
+            // Start explosion
+            this.isExploding = true;
+            this.explosionStartTime = Date.now();
+            this.createExplosionParticles(this.player.x, this.player.y);
+            
+            // Calculate final score one last time
+            this.updateScore();
+            
+            // Wait for explosion animation to finish before resetting
+            setTimeout(() => {
+                // Exit pointer lock
+                document.exitPointerLock();
+                
+                // Reset player position
+                this.player.x = this.canvas.width / 2;
+                this.player.y = this.canvas.height - 50;
+                this.player.velocityX = 0;
+                this.player.velocityY = 0;
+                this.player.targetVelocityX = 0;
+                this.player.targetVelocityY = 0;
+                this.player.rotation = 0;
+                this.player.targetRotation = 0;
+                
+                // Clear enemies and particles
+                this.enemies = [];
+                this.particles = [];
+                
+                // Reset spawn timer
+                this.lastEnemySpawn = 0;
+                
+                // Reset explosion state
+                this.isExploding = false;
+                
+                // Reset score system
+                this.score = 0;
+                this.gameStartTime = 0;
+                this.gameRunTime = 0;
+                this.enemyTimeOffset = 0;
+                
+                // Clear bullets along with other elements
+                this.bullets = [];
+                this.lastBulletTime = 0;
+                
+                // Clear floating texts along with other elements
+                this.floatingTexts = [];
+                
+                // Reset health boost properties
+                this.planesDestroyed = 0;
+                this.healthBoosts = [];
+                this.lastHeartDropTime = 0;
+                
+                // Reset level and experience
+                this.level = 1;
+                this.experience = 0;
+                this.experienceToNextLevel = 500;
+                this.scoreMultiplier = 1;
+                
+                // Reset difficulty
+                this.enemySpawnInterval = this.baseEnemySpawnInterval;
+                
+                // Reset upgrade system
+                this.upgrades = {
+                    maxHealth: 1,
+                    bulletDamage: 1,
+                    fireRateBoost: 0,
+                    baseBulletInterval: 400, // Changed from 500ms
+                    moveSpeed: 1,
+                    scoreMultiplier: 1,
+                    doubleShot: false,
+                    doubleDamageChance: 0,
+                    xpMultiplier: 1.0,
+                    spreadShot: false,
+                    improvedHandling: false,
+                    handlingBoost: 0
+                };
+                // Reset bullet interval
+                this.bulletInterval = this.upgrades.baseBulletInterval;
+                
+                // Reset developer mode features
+                this.player.devModeInvulnerable = false;
+                
+                // Stop game and show menu
+                this.gameStarted = false;
+                this.canvas.style.display = 'none';
+                this.menu.style.display = 'block';
+            }, this.explosionDuration);
+        }
+    }
+    
+    updateHealthBoosts() {
+        for (let i = this.healthBoosts.length - 1; i >= 0; i--) {
+            const boost = this.healthBoosts[i];
+            
+            // Move health boost downward
+            boost.y += boost.speed;
+            
+            // Check if health boost is off screen
+            if (boost.y > this.canvas.height + boost.height) {
+                this.healthBoosts.splice(i, 1);
+                continue;
+            }
+            
+            // Check collision with player
+            if (!boost.collected) {
+                const dx = this.player.x - boost.x;
+                const dy = this.player.y - boost.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance < this.player.width/2 + boost.width/2) {
+                    // Only collect if player has 2 or fewer hearts
+                    if (this.player.health < this.maxHealth) {
+                        this.player.health++;
+                        boost.collected = true;
+                        
+                        // Add floating text
+                        this.floatingTexts.push({
+                            value: '+1 Heart',
+                            x: boost.x,
+                            y: boost.y,
+                            life: 1.0
+                        });
+                    }
+                }
+            }
+        }
+    }
+    
+    drawHealthBoosts() {
+        for (const boost of this.healthBoosts) {
+            if (!boost.collected) {
+                this.ctx.save();
+                this.ctx.translate(boost.x, boost.y);
+                
+                // Draw pulsing heart
+                const pulse = Math.sin(Date.now() * 0.005) * 0.1 + 1;
+                this.ctx.scale(pulse, pulse);
+                
+                this.ctx.fillStyle = 'rgba(255, 0, 0, 0.8)';
+                this.ctx.beginPath();
+                this.ctx.moveTo(0, -boost.height/4);
+                this.ctx.bezierCurveTo(
+                    -boost.width/2, -boost.height/2,
+                    -boost.width/2, boost.height/4,
+                    0, boost.height/2
+                );
+                this.ctx.bezierCurveTo(
+                    boost.width/2, boost.height/4,
+                    boost.width/2, -boost.height/2,
+                    0, -boost.height/4
+                );
+                this.ctx.fill();
+                
+                this.ctx.restore();
+            }
+        }
+    }
+    
+    drawHearts() {
+        this.ctx.save(); // Save state before drawing hearts
+        
+        const heartSize = 40;
+        const padding = 12;
+        
+        for (let i = 0; i < this.maxHealth; i++) {
+            const x = padding + i * (heartSize + padding);
+            const y = padding;
+            
+            this.ctx.beginPath();
+            this.ctx.moveTo(x + heartSize/2, y + heartSize/4);
+            
+            this.ctx.bezierCurveTo(
+                x, y, 
+                x, y + heartSize/2, 
+                x + heartSize/2, y + heartSize
+            );
+            
+            this.ctx.bezierCurveTo(
+                x + heartSize, y + heartSize/2, 
+                x + heartSize, y, 
+                x + heartSize/2, y + heartSize/4
+            );
+            
+            if (i < this.player.health) {
+                this.ctx.fillStyle = 'red';
+                this.ctx.fill();
+            } else {
+                this.ctx.strokeStyle = 'rgba(255, 0, 0, 0.3)';
+                this.ctx.lineWidth = 2;
+                this.ctx.stroke();
+            }
+        }
+        
+        this.ctx.restore(); // Restore state after drawing hearts
+    }
+    
+    drawActivePowerups() {
+        if (this.activePowerups.length === 0) return;
+        
+        this.ctx.save();
+        
+        const iconSize = 30;
+        const padding = 12;
+        const startY = padding + 40 + padding; // Position below hearts
+        
+        // Set up text properties
+        this.ctx.font = '14px Arial';
+        this.ctx.textAlign = 'left';
+        this.ctx.textBaseline = 'middle';
+        
+        // Draw each active powerup
+        this.activePowerups.forEach((powerup, index) => {
+            const y = startY + index * (iconSize + 10);
+            const x = padding;
+            
+            // Calculate time remaining
+            const timeRemaining = Math.max(0, (this.powerupDuration - (Date.now() - powerup.startTime)) / 1000);
+            const timeRemainingText = timeRemaining.toFixed(1) + 's';
+            
+            // All powerups are blue now
+            this.ctx.fillStyle = '#0080FF';
+            
+            // Draw powerup icon based on type
+            switch (powerup.type) {
+                case 'rapidFire':
+                    this.drawRapidFireIcon(x + iconSize/2, y + iconSize/2, iconSize/2);
+                    this.ctx.fillText('Rapid Fire', x + iconSize + 5, y + iconSize/2);
+                    break;
+                case 'spreadShot':
+                    this.drawTriangle(x + iconSize/2, y + iconSize/2, iconSize/2);
+                    this.ctx.fillText('Spread Shot', x + iconSize + 5, y + iconSize/2);
+                    break;
+                case 'shield':
+                    this.drawShieldIcon(x + iconSize/2, y + iconSize/2, iconSize/2);
+                    this.ctx.fillText('Shield', x + iconSize + 5, y + iconSize/2);
+                    break;
+                case 'speedBoost':
+                    this.drawBootsIcon(x + iconSize/2, y + iconSize/2, iconSize/2);
+                    this.ctx.fillText('Speed Boost', x + iconSize + 5, y + iconSize/2);
+                    break;
+                case 'doubleScore':
+                    this.drawMultiplier(x + iconSize/2, y + iconSize/2, iconSize/2);
+                    this.ctx.fillText('Double Score', x + iconSize + 5, y + iconSize/2);
+                    break;
+            }
+            
+            // Draw time remaining
+            this.ctx.fillStyle = 'white';
+            this.ctx.fillText(timeRemainingText, x + iconSize + 120, y + iconSize/2);
+            
+            // Draw progress bar
+            const barWidth = 60;
+            const barHeight = 6;
+            const barX = x + iconSize + 165;
+            const barY = y + iconSize/2 - barHeight/2;
+            
+            // Draw background
+            this.ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+            this.ctx.fillRect(barX, barY, barWidth, barHeight);
+            
+            // Draw progress - all blue now
+            const progress = timeRemaining / (this.powerupDuration / 1000);
+            this.ctx.fillStyle = '#0080FF';
+            this.ctx.fillRect(barX, barY, barWidth * progress, barHeight);
+        });
+        
+        this.ctx.restore();
+    }
+
+    // New method to draw rapid fire icon (two bullets)
+    drawRapidFireIcon(x, y, size) {
+        // Draw first bullet
+        this.ctx.fillRect(x - size/2, y - size/3, size/3, size/1.5);
+        
+        // Draw second bullet slightly offset
+        this.ctx.fillRect(x + size/4, y - size/3, size/3, size/1.5);
+    }
+
+    // New method to draw shield icon
+    drawShieldIcon(x, y, size) {
+        this.ctx.beginPath();
+        this.ctx.moveTo(x, y - size);
+        this.ctx.lineTo(x + size, y - size/2);
+        this.ctx.lineTo(x + size, y + size/2);
+        this.ctx.lineTo(x, y + size);
+        this.ctx.lineTo(x - size, y + size/2);
+        this.ctx.lineTo(x - size, y - size/2);
+        this.ctx.closePath();
+        this.ctx.fill();
+    }
+
+    // New method to draw boots icon
+    drawBootsIcon(x, y, size) {
+        // Left boot
+        this.ctx.beginPath();
+        // Boot top/ankle part
+        this.ctx.moveTo(x - size/2, y - size/2);
+        this.ctx.lineTo(x - size/4, y - size/2);
+        // Boot front/toe
+        this.ctx.lineTo(x - size/4, y + size/4);
+        this.ctx.lineTo(x - size*0.9, y + size/4);
+        this.ctx.lineTo(x - size*0.9, y + size/2);
+        // Boot sole
+        this.ctx.lineTo(x - size/4, y + size/2);
+        // Boot heel
+        this.ctx.lineTo(x - size/4, y + size/4);
+        this.ctx.lineTo(x - size/2, y + size/4);
+        this.ctx.closePath();
+        this.ctx.fill();
+        
+        // Right boot (slightly offset)
+        this.ctx.beginPath();
+        // Boot top/ankle part
+        this.ctx.moveTo(x + size/4, y - size/2);
+        this.ctx.lineTo(x + size/2, y - size/2);
+        // Boot front/toe
+        this.ctx.lineTo(x + size/2, y + size/4);
+        this.ctx.lineTo(x + size*0.9, y + size/4);
+        this.ctx.lineTo(x + size*0.9, y + size/2);
+        // Boot sole
+        this.ctx.lineTo(x + size/2, y + size/2);
+        // Boot heel
+        this.ctx.lineTo(x + size/2, y + size/4);
+        this.ctx.lineTo(x + size/4, y + size/4);
+        this.ctx.closePath();
+        this.ctx.fill();
+        
+        // Add details - laces or stripes on boots
+        this.ctx.fillStyle = '#0055BB';
+        
+        // Left boot laces
+        this.ctx.fillRect(x - size/2 + 2, y - size/3, size/4 - 4, size/12);
+        this.ctx.fillRect(x - size/2 + 2, y - size/4, size/4 - 4, size/12);
+        
+        // Right boot laces
+        this.ctx.fillRect(x + size/4 + 2, y - size/3, size/4 - 4, size/12);
+        this.ctx.fillRect(x + size/4 + 2, y - size/4, size/4 - 4, size/12);
+    }
+    
+    updateLevel() {
+        // Check for level up
+        if (this.experience >= this.experienceToNextLevel) {
+            this.level++;
+            this.experience -= this.experienceToNextLevel;
+            this.experienceToNextLevel = Math.floor(this.experienceToNextLevel * 1.3);
+            
+            // Show level up message
+            this.floatingTexts.push({
+                value: `Level ${this.level}!`,
+                x: this.canvas.width / 2,
+                y: this.canvas.height / 2,
+                life: 2.0,
+                size: 48,
+                color: '#FFD700'
+            });
+            
+            // Unlock new enemy types based on level
+            if (this.level === 3) this.enemyTypes.push('scout');
+            if (this.level === 5) this.enemyTypes.push('tank');
+            if (this.level === 7) this.enemyTypes.push('shooter');
+            if (this.level === 10) this.enemyTypes.push('boss');
+            
+            // Update difficulty
+            this.enemySpawnInterval = this.baseEnemySpawnInterval * Math.pow(0.9, this.level - 1);
+            
+            // Remove this line that increases score multiplier with level
+            // this.scoreMultiplier = 1 + (this.level - 1) * 0.2;
+            
+            // Pause and show simplified upgrade options
+            this.showUpgradeOptions();
+        }
+    }
+    
+    showUpgradeOptions() {
+        // Pause the gameplay but keep the game running
+        this.pausedForUpgrade = true;
+        
+        // Exit pointer lock to allow mouse interaction with upgrade modal
+        document.exitPointerLock();
+        
+        // Create full-screen overlay to prevent clicks outside the modal
+        const overlay = document.createElement('div');
+        overlay.style.position = 'fixed';
+        overlay.style.top = '0';
+        overlay.style.left = '0';
+        overlay.style.width = '100%';
+        overlay.style.height = '100%';
+        overlay.style.background = 'rgba(0, 0, 0, 0.5)';
+        overlay.style.zIndex = '999';
+        document.body.appendChild(overlay);
+        
+        // Create upgrade modal
+        const modal = document.createElement('div');
+        modal.style.position = 'absolute';
+        modal.style.top = '50%';
+        modal.style.left = '50%';
+        modal.style.transform = 'translate(-50%, -50%)';
+        modal.style.background = 'rgba(0, 0, 0, 0.9)';
+        modal.style.padding = '40px';
+        modal.style.borderRadius = '15px';
+        modal.style.color = 'white';
+        modal.style.textAlign = 'center';
+        modal.style.zIndex = '1000';
+        modal.style.minWidth = '500px';
+        modal.style.boxShadow = '0 0 20px rgba(255, 215, 0, 0.5)';
+        
+        // Add title
+        const title = document.createElement('h2');
+        title.textContent = 'Level Up! Choose an Upgrade';
+        title.style.color = '#FFD700';
+        title.style.marginBottom = '30px';
+        title.style.fontSize = '28px';
+        modal.appendChild(title);
+        
+        let selectedUpgrades = [];
+        
+        // Special case for level 4: Double Shot as first option if not yet obtained
+        if (this.level === 4 && !this.upgrades.doubleShot) {
+            // Get all available upgrades
+            const availableUpgrades = this.getAvailableUpgrades();
+            
+            // Find the double shot upgrade
+            const doubleShot = availableUpgrades.find(upgrade => upgrade.id === 'doubleShot');
+            
+            // Remove double shot from available upgrades for random selection
+            const otherUpgrades = availableUpgrades.filter(upgrade => upgrade.id !== 'doubleShot');
+            
+            // Get up to 2 random upgrades from other options
+            const randomUpgrades = this.getRandomUpgrades(otherUpgrades, 2);
+            
+            // Put double shot first, then the random upgrades
+            selectedUpgrades = [doubleShot, ...randomUpgrades];
+        } else {
+            // Normal case: Get available upgrades based on level and previous upgrades
+            const availableUpgrades = this.getAvailableUpgrades();
+            
+            // Randomly select up to 3 upgrades from available options
+            selectedUpgrades = this.getRandomUpgrades(availableUpgrades, 3);
+        }
+        
+        // Create buttons for each selected upgrade
+        selectedUpgrades.forEach(upgrade => {
+            const button = this.createUpgradeButton(upgrade, modal, overlay);
+            modal.appendChild(button);
+        });
+        
+        document.body.appendChild(modal);
+    }
+    
+    getAvailableUpgrades() {
+        const availableUpgrades = [];
+        
+        // Fire Rate - always available
+        availableUpgrades.push({
+            id: 'fireRate',
+            name: 'Fire Rate +20%',
+            description: `Shoot faster (Current boost: ${this.upgrades.fireRateBoost}%)`,
+            color: '#4A90E2',
+            action: () => {
+                this.upgrades.fireRateBoost += 20;
+                // Recalculate bullet interval based on percentage boost
+                this.bulletInterval = this.upgrades.baseBulletInterval / (1 + this.upgrades.fireRateBoost / 100);
+            }
+        });
+        
+        // Double Shot - available at level 4 or later if not already obtained
+        if (this.level >= 4 && !this.upgrades.doubleShot) {
+            availableUpgrades.push({
+                id: 'doubleShot',
+                name: 'Double Shot',
+                description: 'Fire two bullets side by side',
+                color: '#E27A4A',
+                action: () => {
+                    this.upgrades.doubleShot = true;
+                }
+            });
+        }
+        
+        // Max Health - different levels of availability
+        if ((this.level >= 5 && this.maxHealth < 4) || 
+            (this.level >= 10 && this.maxHealth < 5) || 
+            (this.level >= 15 && this.maxHealth < 6)) {
+            availableUpgrades.push({
+                id: 'maxHealth',
+                name: 'Max Health +1',
+                description: 'Increase your maximum health capacity',
+                color: '#FF4136',
+                action: () => {
+                    this.maxHealth++;
+                    this.player.health++; // Also give one heart
+                }
+            });
+        }
+        
+        // Heart Refill - available if player health is below max
+        if (this.player.health < this.maxHealth) {
+            let heartsToRefill = Math.min(3, this.maxHealth - this.player.health);
+            availableUpgrades.push({
+                id: 'heartRefill',
+                name: `Heart Refill +${heartsToRefill}`,
+                description: 'Restore lost hearts',
+                color: '#FF6B6B',
+                action: () => {
+                    this.player.health = Math.min(this.maxHealth, this.player.health + heartsToRefill);
+                }
+            });
+        }
+        
+        // Double Damage - available if chance is below 60%
+        if (this.upgrades.doubleDamageChance < 0.6) {
+            availableUpgrades.push({
+                id: 'doubleDamage',
+                name: 'Double Damage +15%',
+                description: `Chance to deal double damage (Current: ${(this.upgrades.doubleDamageChance * 100).toFixed(1)}%)`,
+                color: '#7B68EE',
+                action: () => {
+                    this.upgrades.doubleDamageChance += 0.15;
+                }
+            });
+        }
+        
+        // XP Multiplier upgrade - always available
+        availableUpgrades.push({
+            id: 'xpMultiplier',
+            name: 'XP Multiplier +0.2',
+            description: `Increase experience gained (Current: ×${this.upgrades.xpMultiplier.toFixed(1)})`,
+            color: '#32CD32', // Lime green
+            action: () => {
+                this.upgrades.xpMultiplier += 0.2;
+            }
+        });
+        
+        // Spread Shot - available at level 5 if not already obtained
+        if (this.level >= 5 && !this.upgrades.spreadShot) {
+            availableUpgrades.push({
+                id: 'spreadShot',
+                name: 'Spread Shot',
+                description: 'Fire angled shots every other round',
+                color: '#00AA00',
+                action: () => {
+                    this.upgrades.spreadShot = true;
+                    this.spreadShotCounter = 0;
+                }
+            });
+        }
+        
+        // Improved Handling - available at any level and can be taken multiple times
+        if (this.level >= 1) {
+            availableUpgrades.push({
+                id: 'improvedHandling',
+                name: 'Improved Handling +10%',
+                description: `Increase max speed, acceleration, and deceleration (Current: +${this.upgrades.handlingBoost}%)`,
+                color: '#3498DB', // Nice blue color
+                action: () => {
+                    // Track that the upgrade has been taken at least once
+                    this.upgrades.improvedHandling = true;
+                    
+                    // Increase the handling boost counter
+                    this.upgrades.handlingBoost += 10;
+                    
+                    // Apply 10% increase to player's movement properties
+                    this.player.maxSpeed *= 1.1;
+                    this.player.acceleration *= 1.1;
+                    this.player.deceleration *= 1.1;
+                }
+            });
+        }
+        
+        return availableUpgrades;
+    }
+    
+    getRandomUpgrades(availableUpgrades, count) {
+        // If there are fewer than 'count' upgrades available, return all of them
+        if (availableUpgrades.length <= count) {
+            return availableUpgrades;
+        }
+        
+        // Otherwise, randomly select 'count' upgrades
+        const selectedUpgrades = [];
+        const upgradeCopy = [...availableUpgrades];
+        
+        for (let i = 0; i < count; i++) {
+            if (upgradeCopy.length === 0) break;
+            
+            const randomIndex = Math.floor(Math.random() * upgradeCopy.length);
+            selectedUpgrades.push(upgradeCopy[randomIndex]);
+            upgradeCopy.splice(randomIndex, 1);
+        }
+        
+        return selectedUpgrades;
+    }
+    
+    createUpgradeButton(upgrade, modal, overlay) {
+        const button = document.createElement('button');
+        button.style.display = 'block';
+        button.style.width = '100%';
+        button.style.padding = '20px';
+        button.style.margin = '15px 0';
+        button.style.background = upgrade.color;
+        button.style.border = 'none';
+        button.style.borderRadius = '10px';
+        button.style.color = 'white';
+        button.style.cursor = 'pointer';
+        button.style.fontSize = '20px';
+        button.innerHTML = `${upgrade.name}<br><small style="font-size: 16px;">${upgrade.description}</small>`;
+        
+        button.addEventListener('click', () => {
+            // Apply the upgrade
+            upgrade.action();
+            
+            // Resume gameplay
+            this.resumeAfterUpgrade(modal, overlay);
+        });
+        
+        return button;
+    }
+    
+    resumeAfterUpgrade(modal, overlay) {
+        // Remove the modal and overlay
+        document.body.removeChild(modal);
+        document.body.removeChild(overlay);
+        
+        // Resume gameplay
+        this.pausedForUpgrade = false;
+        
+        // Make sure we're still in game mode
+        this.gameStarted = true;
+        this.canvas.style.display = 'block';
+        this.menu.style.display = 'none';
+        
+        // Reset enemy spawn timer to ensure enemies start spawning immediately
+        this.lastEnemySpawn = 0;
+        
+        // Request pointer lock again
+        this.canvas.requestPointerLock();
+    }
+    
+    drawDeveloperInfo() {
+        if (!this.developerMode) return;
+        
+        // Calculate FPS
+        const now = performance.now();
+        this.frameCount++;
+        
+        // Update FPS every 500ms
+        if (now - this.fpsUpdateTime > 500) {
+            this.fps = Math.round((this.frameCount * 1000) / (now - this.fpsUpdateTime));
+            this.fpsUpdateTime = now;
+            this.frameCount = 0;
+        }
+        
+        // Set up text properties
+        this.ctx.fillStyle = 'white';
+        this.ctx.font = '12px monospace';
+        this.ctx.textAlign = 'left';
+        this.ctx.textBaseline = 'bottom';
+        
+        // Draw information
+        const padding = 10;
+        let lineHeight = 15;
+        let y = this.canvas.height - padding;
+        
+        // Command info
+        this.ctx.fillText('DEVELOPER MODE', padding, y);
+        y -= lineHeight;
+        this.ctx.fillText('FPS: ' + this.fps, padding, y);
+        y -= lineHeight;
+        this.ctx.fillText('Level: ' + this.level, padding, y);
+        y -= lineHeight;
+        this.ctx.fillText('Game Time: ' + Math.floor(this.gameRunTime) + 's', padding, y);
+        y -= lineHeight;
+        this.ctx.fillText('Enemy Time: ' + Math.floor(this.gameRunTime + this.enemyTimeOffset) + 's', padding, y);
+        y -= lineHeight;
+        this.ctx.fillText('Experience: ' + this.experience + ' / ' + this.experienceToNextLevel, padding, y);
+        y -= lineHeight;
+        this.ctx.fillText('Bullet Interval: ' + this.bulletInterval.toFixed(1) + 'ms', padding, y);
+        y -= lineHeight;
+        this.ctx.fillText('Enemy Spawn Interval: ' + this.enemySpawnInterval.toFixed(1) + 'ms', padding, y);
+        y -= lineHeight;
+        this.ctx.fillText('Score Multiplier: x' + (this.scoreMultiplier * this.upgrades.scoreMultiplier).toFixed(1) + 
+                          ' (Level: x' + this.scoreMultiplier.toFixed(1) + 
+                          ', Upgrade: x' + this.upgrades.scoreMultiplier.toFixed(1) + ')', padding, y);
+        y -= lineHeight;
+        this.ctx.fillText('Enemy Types: ' + this.enemyTypes.join(', '), padding, y);
+        y -= lineHeight * 2;
+        
+        // Command list
+        this.ctx.fillText('COMMANDS:', padding, y);
+        y -= lineHeight;
+        this.ctx.fillText('0: Toggle Developer Mode', padding, y);
+        y -= lineHeight;
+        this.ctx.fillText('9: Toggle Shooting (' + (this.shootingEnabled ? 'ON' : 'OFF') + ')', padding, y);
+        y -= lineHeight;
+        this.ctx.fillText('Shift+9: Set Boss Health to 150 (Trigger Laser)', padding, y);
+        y -= lineHeight;
+        this.ctx.fillText('8: Toggle Invincibility (' + (this.player.devModeInvulnerable ? 'ON' : 'OFF') + ')', padding, y);
+        y -= lineHeight;
+        this.ctx.fillText('O: Add +10s to Enemy Time', padding, y);
+        y -= lineHeight;
+        this.ctx.fillText('P: Instant Level Up & Choose Upgrade', padding, y);
+        y -= lineHeight;
+        this.ctx.fillText('D: Toggle Debug Hitboxes (' + (this.debugMode ? 'ON' : 'OFF') + ')', padding, y);
+    }
+    
+    // New method to update available enemy types based on game runtime
+    updateAvailableEnemyTypes() {
+        // Reset enemy types list if it's been modified
+        if (this.enemyTypes.length > 1) {
+            this.enemyTypes = ['basic'];
+        }
+        
+        // Calculate effective game time with developer offset
+        const effectiveGameTime = this.gameRunTime + this.enemyTimeOffset;
+        
+        // Add scout enemies after 30 seconds
+        if (effectiveGameTime >= 30 && !this.enemyTypes.includes('scout')) {
+            this.enemyTypes.push('scout');
+        }
+        
+        // Add tank enemies after 20 seconds (changed from 60 to 20)
+        if (effectiveGameTime >= 20 && !this.enemyTypes.includes('tank')) {
+            this.enemyTypes.push('tank');
+        }
+        
+        // Add shooter enemies after 90 seconds
+        if (effectiveGameTime >= 90 && !this.enemyTypes.includes('shooter')) {
+            this.enemyTypes.push('shooter');
+        }
+        
+        // Add boss enemies after 120 seconds
+        if (effectiveGameTime >= 120 && !this.enemyTypes.includes('boss')) {
+            this.enemyTypes.push('boss');
+        }
+        
+        // Increase spawn rate based on effective game time
+        this.enemySpawnInterval = Math.max(500, this.baseEnemySpawnInterval - (effectiveGameTime * 5));
+    }
+    
+    gameLoop() {
+        if (!this.gameStarted && !this.isExploding) return;
+        
+        // Calculate FPS if in developer mode
+        if (this.developerMode && this.fpsUpdateTime === 0) {
+            this.fpsUpdateTime = performance.now();
+        }
+        
+        // Clear canvas
+        this.ctx.fillStyle = 'black';
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        
+        if (!this.isExploding) {
+            // Save context state
+            this.ctx.save();
+            
+            // Draw everything regardless of pause state
+            this.drawBullets();
+            this.drawBossEngineParticles(); // Draw boss engine particles
+            this.drawParticles();
+            this.drawPlayer();
+            this.drawEnemies();
+            this.drawEnemyBullets();
+            this.drawEnemyMissiles(); // Draw missiles once in main game loop
+            this.drawHealthBoosts();
+            this.drawScore();
+            this.drawFloatingTexts();
+            this.drawHearts();
+            this.drawActivePowerups();
+            this.drawPowerups();
+            
+            // Draw low health warning border
+            if (this.player.health === 1) {
+                const time = Date.now();
+                const centerX = this.canvas.width / 2;
+                const centerY = this.canvas.height / 2;
+                
+                // Create radial gradient for the main effect
+                const gradient = this.ctx.createRadialGradient(
+                    centerX, centerY, 0,
+                    centerX, centerY, Math.max(this.canvas.width, this.canvas.height) / 1.2
+                );
+                
+                // Add color stops with wave effect
+                const wave = Math.sin(time * 0.002) * 0.15 + 0.25;
+                gradient.addColorStop(0, 'rgba(255, 0, 0, 0)');
+                gradient.addColorStop(0.3, `rgba(255, 0, 0, ${wave * 0.3})`);
+                gradient.addColorStop(0.6, `rgba(255, 0, 0, ${wave * 0.5})`);
+                gradient.addColorStop(1, `rgba(255, 0, 0, ${wave * 0.7})`);
+                
+                // Draw the gradient
+                this.ctx.fillStyle = gradient;
+                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+            }
+            
+            // Only update game state if not paused for upgrade
+            if (!this.pausedForUpgrade) {
+                this.updatePlayer();
+                this.updateBullets();
+                this.updateEnemies();
+                this.updateEnemyBullets();
+                this.updateHealthBoosts();
+                this.checkBulletCollisions();
+                this.checkCollisions();
+                this.updateScore();
+                this.updateParticles();
+                this.updateFloatingTexts();
+                this.updateLevel(); // Add level update
+                this.updatePowerups();
+            }
+            
+            // Restore context state
+            this.ctx.restore();
+            
+            // Draw developer info if enabled
+            this.drawDeveloperInfo();
+        } else {
+            // Explosion animation
+            this.updateParticles();
+            this.drawEnemies(); // Keep drawing enemies during explosion
+            
+            // Draw explosion particles
+            this.drawParticles();
+            
+            // Fade out player
+            const timeSinceExplosion = Date.now() - this.explosionStartTime;
+            const fadeProgress = timeSinceExplosion / this.explosionDuration;
+            this.ctx.globalAlpha = Math.max(0, 1 - fadeProgress);
+            this.drawPlayer();
+            this.ctx.globalAlpha = 1;
+            
+            // Draw final score after everything else
+            this.drawScore();
+        }
+        
+        // Continue the game loop
+        requestAnimationFrame(() => this.gameLoop());
+    }
+
+    drawEnemyBullets() {
+        for (const bullet of this.enemyBullets) {
+            this.ctx.fillStyle = bullet.color || '#FF4500';
+            
+            if (bullet.isTurretProjectile) {
+                // Draw turret projectile as a small red ball
+                this.ctx.save();
+                this.ctx.translate(bullet.x, bullet.y);
+                
+                // Draw ball
+                this.ctx.beginPath();
+                this.ctx.arc(0, 0, bullet.radius, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                this.ctx.restore();
+            } else {
+                // Regular enemy bullet
+                this.ctx.fillRect(bullet.x - bullet.width/2, bullet.y, bullet.width, bullet.height);
+            }
+        }
+    }
+
+    updateEnemyBullets() {
+        for (let i = this.enemyBullets.length - 1; i >= 0; i--) {
+            const bullet = this.enemyBullets[i];
+            
+            // Move bullet based on velocity
+            if (bullet.isTurretProjectile) {
+                // Turret projectiles move according to their angle
+                bullet.x += bullet.velocityX;
+                bullet.y += bullet.velocityY;
+                
+                // Remove bullet if it goes off screen
+                if (bullet.y > this.canvas.height + bullet.radius || 
+                    bullet.y < -bullet.radius || 
+                    bullet.x < -bullet.radius || 
+                    bullet.x > this.canvas.width + bullet.radius) {
+                    this.enemyBullets.splice(i, 1);
+                    continue;
+                }
+                
+                // Check collision with player (if not invulnerable)
+                if (!this.player.invulnerable) {
+                    const dx = this.player.x - bullet.x;
+                    const dy = this.player.y - bullet.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (distance < this.player.width / 3 + bullet.radius) {
+                        // Remove bullet
+                        this.enemyBullets.splice(i, 1);
+                        
+                        // Create a small explosion effect for boss barrage bullets
+                        if (bullet.isBossBarrageBullet) {
+                            this.createSmallExplosion(bullet.x, bullet.y);
+                        }
+                        
+                        // Damage player
+                        this.player.health -= bullet.damage || 1;
+                        this.player.invulnerable = true;
+                        this.player.lastHitTime = Date.now();
+                        
+                        // Start screen vibration
+                        this.vibrationStartTime = Date.now();
+                        
+                        // Check if player is dead
+                        if (this.player.health <= 0) {
+                            this.gameOver();
+                        }
+                    }
+                }
+            } else if (bullet.velocityX !== undefined && bullet.velocityY !== undefined) {
+                // Boss bullets have angled velocity
+                bullet.x += bullet.velocityX;
+                bullet.y += bullet.velocityY;
+                
+                // Rest of the existing collision check for regular bullets
+                if (bullet.y > this.canvas.height + bullet.height || 
+                    bullet.y < -bullet.height || 
+                    bullet.x < -bullet.width || 
+                    bullet.x > this.canvas.width + bullet.width) {
+                    this.enemyBullets.splice(i, 1);
+                    continue;
+                }
+                
+                // Check collision with player (if not invulnerable)
+                if (!this.player.invulnerable) {
+                    const dx = this.player.x - bullet.x;
+                    const dy = this.player.y - bullet.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (distance < this.player.width / 3) {
+                        // Remove bullet
+                        this.enemyBullets.splice(i, 1);
+                        
+                        // Create a small explosion effect for boss barrage bullets
+                        if (bullet.isBossBarrageBullet) {
+                            this.createSmallExplosion(bullet.x, bullet.y);
+                        }
+                        
+                        // Damage player
+                        this.player.health -= bullet.damage || 1;
+                        this.player.invulnerable = true;
+                        this.player.lastHitTime = Date.now();
+                        
+                        // Start screen vibration
+                        this.vibrationStartTime = Date.now();
+                        
+                        // Check if player is dead
+                        if (this.player.health <= 0) {
+                            this.gameOver();
+                        }
+                    }
+                }
+            } else {
+                // Regular enemy bullets just move downward
+                bullet.y += bullet.speed;
+                
+                // Rest of the existing checks for regular bullets
+                if (bullet.y > this.canvas.height + bullet.height || 
+                    bullet.y < -bullet.height || 
+                    bullet.x < -bullet.width || 
+                    bullet.x > this.canvas.width + bullet.width) {
+                    this.enemyBullets.splice(i, 1);
+                    continue;
+                }
+                
+                // Check collision with player (if not invulnerable)
+                if (!this.player.invulnerable) {
+                    const dx = this.player.x - bullet.x;
+                    const dy = this.player.y - bullet.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (distance < this.player.width / 3) {
+                        // Remove bullet
+                        this.enemyBullets.splice(i, 1);
+                        
+                        // Create a small explosion effect for boss barrage bullets
+                        if (bullet.isBossBarrageBullet) {
+                            this.createSmallExplosion(bullet.x, bullet.y);
+                        }
+                        
+                        // Damage player
+                        this.player.health -= bullet.damage || 1;
+                        this.player.invulnerable = true;
+                        this.player.lastHitTime = Date.now();
+                        
+                        // Start screen vibration
+                        this.vibrationStartTime = Date.now();
+                        
+                        // Check if player is dead
+                        if (this.player.health <= 0) {
+                            this.gameOver();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Add new method to spawn custom boss
+    spawnCustomBoss() {
+        const boss = {
+            x: this.canvas.width / 2,
+            y: -120, // Start above the screen
+            width: 140, // Adjusted width for better proportions
+            height: 150, // Adjusted height for better proportions
+            type: 'customBoss',
+            speed: 1,
+            color: '#9c9c9c', // Light gray color matching the image
+            outlineColor: '#2c2c2c', // Dark gray outline color
+            hitPoints: 200, // Reduced to 200 from 400
+            maxHitPoints: 200, // Store original health
+            experienceValue: 5000,
+            targetY: 100, // Position to stop at
+            hitFlashTime: 0,
+            invincibleDuringEntrance: true, // New property to track entrance invincibility
+            lastEngineParticleTime: 0,
+            engineParticleInterval: 30, // Generate particles every 30ms
+            // Enhanced sine wave movement parameters
+            waveOffset: 0,
+            baseWaveSpeed: 0.02, // Base speed of the sine wave
+            waveSpeed: 0.02, // Current speed (will vary)
+            targetWaveSpeed: 0.02, // Target speed for smooth transitions
+            speedVariationTimer: 0, // Timer for speed changes
+            speedVariationInterval: 3000, // Change speed every 3 seconds
+            baseWaveAmplitude: 250, // Base amplitude (increased from 150)
+            waveAmplitude: 250, // Current amplitude (will vary)
+            targetWaveAmplitude: 250, // Target amplitude for smooth transitions
+            amplitudeVariationTimer: 0, // Timer for amplitude changes
+            amplitudeVariationInterval: 5000, // Change amplitude every 5 seconds
+            minAmplitude: 200, // Minimum amplitude
+            maxAmplitude: 350, // Maximum amplitude
+            transitionSpeed: 0.05, // Speed of transition between current and target values
+            // Add missile launcher properties
+            lastMissileTime: 0,
+            missileInterval: 4000, // Fire missiles every 4 seconds (changed from 3 seconds)
+            missileSpeed: 5,
+            missileDamage: 2,
+            // Add turret tracking properties
+            leftTurretAngle: 0,
+            rightTurretAngle: 0,
+            // Add barrage attack properties
+            lastBarrageTime: 0,
+            barrageInterval: 6000 + Math.random() * 2000, // Random time between 6-8 seconds
+            bulletDamage: 1,
+            // Add burst attack properties
+            burstCount: 0, // Current burst count
+            maxBurstCount: Math.floor(3 + Math.random() * 3), // Random between 3-5 bursts
+            burstActive: false, // Whether a burst is in progress
+            lastBurstTime: 0, // Time of last burst in sequence
+            burstCooldown: 500, // 0.5 second between bursts
+            // Add laser attack properties
+            laserAttackActive: false,
+            isPreparingLaser: false,
+            laserWarningStartTime: 0,
+            laserWarningDuration: 500, // 0.5 seconds warning
+            laserFiringStartTime: 0,
+            laserFiringDuration: 2000, // 2 seconds firing (increased from 1 second)
+            laserDamage: 2, // Damage per frame of laser contact
+            laserAttackCooldown: null // Initialize cooldown as null
+        };
+        
+        this.enemies.push(boss);
+        this.customBossSpawned = true;
+        
+        // Set boss health bar properties
+        this.showBossHealthBar = true;
+        this.bossCurrentHealth = boss.hitPoints;
+        this.bossMaxHealth = boss.maxHitPoints;
+    }
+
+    // New method to spawn boss engine particles
+    spawnBossEngineParticles(boss) {
+        // Left engine particles
+        for (let i = 0; i < 3; i++) {
+            const particle = {
+                x: boss.x - boss.width/3,  // Left engine position
+                y: boss.y + boss.height/10,  // Slightly below the engine
+                velocityX: (Math.random() - 0.5) * 1.5,  // Random horizontal spread
+                velocityY: Math.random() * 3 + 2,  // Downward velocity
+                size: Math.random() * 4 + 2,  // Random size between 2 and 6
+                color: Math.random() < 0.7 ? '#ff7700' : '#ffaa00',  // Orange/yellow color
+                alpha: 1.0,  // Start fully opaque
+                fadeRate: 0.03 + Math.random() * 0.03  // Random fade rate
+            };
+            this.bossEngineParticles.push(particle);
+        }
+        
+        // Right engine particles
+        for (let i = 0; i < 3; i++) {
+            const particle = {
+                x: boss.x + boss.width/3,  // Right engine position
+                y: boss.y + boss.height/10,  // Slightly below the engine
+                velocityX: (Math.random() - 0.5) * 1.5,  // Random horizontal spread
+                velocityY: Math.random() * 3 + 2,  // Downward velocity
+                size: Math.random() * 4 + 2,  // Random size between 2 and 6
+                color: Math.random() < 0.7 ? '#ff7700' : '#ffaa00',  // Orange/yellow color
+                alpha: 1.0,  // Start fully opaque
+                fadeRate: 0.03 + Math.random() * 0.03  // Random fade rate
+            };
+            this.bossEngineParticles.push(particle);
+        }
+    }
+
+    // New method to update boss engine particles
+    updateBossEngineParticles() {
+        for (let i = this.bossEngineParticles.length - 1; i >= 0; i--) {
+            const particle = this.bossEngineParticles[i];
+            
+            // Update position
+            particle.x += particle.velocityX;
+            particle.y += particle.velocityY;
+            
+            // Fade out
+            particle.alpha -= particle.fadeRate;
+            
+            // Remove if fully transparent
+            if (particle.alpha <= 0) {
+                this.bossEngineParticles.splice(i, 1);
+            }
+        }
+    }
+
+    // New method to draw boss engine particles
+    drawBossEngineParticles() {
+        for (const particle of this.bossEngineParticles) {
+            this.ctx.save();
+            this.ctx.globalAlpha = particle.alpha;
+            this.ctx.fillStyle = particle.color;
+            
+            // Draw a circle for each particle
+            this.ctx.beginPath();
+            this.ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+            this.ctx.fill();
+            
+            this.ctx.restore();
+        }
+    }
+
+    // New method to draw boss health bar
+    drawBossHealthBar() {
+        const barWidth = 400;
+        const barHeight = 15; // Reduced from 30 to 15 for thinner bar
+        const barX = (this.canvas.width - barWidth) / 2;
+        const barY = 15;
+        
+        // Boss label removed
+        
+        // Draw background
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        this.ctx.fillRect(barX, barY, barWidth, barHeight);
+        
+        // Calculate health percentage
+        const healthPercent = this.bossCurrentHealth / this.bossMaxHealth;
+        
+        // Always use red for boss health
+        this.ctx.fillStyle = '#FF0000'; // Red
+        
+        this.ctx.fillRect(barX, barY, barWidth * healthPercent, barHeight);
+        
+        // Draw border
+        this.ctx.strokeStyle = 'white';
+        this.ctx.lineWidth = 1; // Reduced from 2 to 1 for thinner border
+        this.ctx.strokeRect(barX, barY, barWidth, barHeight);
+        
+        // Health text removed
+    }
+
+    // Add a new method to spawn the bullet barrage
+    spawnBossBarrage(boss) {
+        // Barrage comes from the bottom rectangle of the boss
+        const bulletOriginX = boss.x;
+        const bulletOriginY = boss.y + boss.height/2.2; // Position at the bottom rectangle
+        
+        // Create a barrage with a random number of bullets (4-9)
+        const bulletCount = 4 + Math.floor(Math.random() * 6);
+        const spreadAngle = 180; // Degrees of spread (90 degrees on each side) - increased from 120
+        const startAngle = 90 - spreadAngle/2; // Start from left side
+        
+        for (let i = 0; i < bulletCount; i++) {
+            // Calculate angle for this bullet
+            const angle = (startAngle + (spreadAngle / (bulletCount - 1)) * i) * (Math.PI / 180);
+            
+            // Create bullet with velocity based on angle
+            this.enemyBullets.push({
+                x: bulletOriginX,
+                y: bulletOriginY,
+                width: 6,
+                height: 12,
+                speed: 6,
+                damage: boss.bulletDamage,
+                color: '#FF0000', // Red bullet
+                // Convert angle to velocity components
+                velocityX: Math.cos(angle) * 6,
+                velocityY: Math.sin(angle) * 6,
+                isBossBarrageBullet: true
+            });
+        }
+        
+        // Add visual and audio feedback
+        // Create small flash particles at the barrage origin
+        for (let i = 0; i < 10; i++) {
+            this.particles.push({
+                x: bulletOriginX,
+                y: bulletOriginY,
+                vx: (Math.random() - 0.5) * 3,
+                vy: (Math.random() - 0.5) * 3,
+                size: 3 + Math.random() * 3,
+                color: '#FFFF00', // Yellow flash
+                life: 0.3
+            });
+        }
+    }
+
+    // Check if the boss laser is hitting the player
+    checkLaserCollision(boss) {
+        // Only check if player is not invulnerable
+        if (this.player.invulnerable) return;
+        
+        // Get the laser origin point (bottom rectangle of boss)
+        const laserOriginX = boss.x;
+        const laserOriginY = boss.y + boss.height/2.2;
+        
+        // Define the laser beam width - make sure it exactly matches the visual width in drawEnemies
+        const laserWidth = 6; // Reduced from 10 to match the visual appearance
+        const laserLeftEdge = laserOriginX - laserWidth/2;
+        const laserRightEdge = laserOriginX + laserWidth/2;
+        
+        // Track player's previous x position if not initialized
+        if (!this.player.previousX) {
+            this.player.previousX = this.player.x;
+        }
+        
+        // Check if player is below the laser origin (in y-axis)
+        if (this.player.y > laserOriginY) {
+            // Get player's central hitbox - using a more conservative hitbox than the full wing points
+            const playerHitboxWidth = this.player.width * 0.6; // 60% of the player's width for tighter collision
+            const playerLeftEdge = this.player.x - playerHitboxWidth/2;
+            const playerRightEdge = this.player.x + playerHitboxWidth/2;
+            
+            // Check if player's central hitbox is within the laser beam
+            let isInLaser = (playerLeftEdge <= laserRightEdge && playerRightEdge >= laserLeftEdge);
+            
+            // Get previous player hitbox
+            const prevPlayerLeftEdge = this.player.previousX - playerHitboxWidth/2;
+            const prevPlayerRightEdge = this.player.previousX + playerHitboxWidth/2;
+            
+            // Check for crossing - be more conservative with the detection
+            // Only count it if player's central hitbox has fully crossed the laser
+            const crossedLeftToRight = prevPlayerRightEdge < laserLeftEdge && playerLeftEdge > laserRightEdge;
+            const crossedRightToLeft = prevPlayerLeftEdge > laserRightEdge && playerRightEdge < laserLeftEdge;
+            
+            // More accurate crossing detection for medium-fast movement
+            const partialCrossLeftToRight = prevPlayerRightEdge < laserLeftEdge && 
+                                          playerRightEdge > laserLeftEdge && 
+                                          playerRightEdge > laserRightEdge;
+                                          
+            const partialCrossRightToLeft = prevPlayerLeftEdge > laserRightEdge && 
+                                          playerLeftEdge < laserRightEdge && 
+                                          playerLeftEdge < laserLeftEdge;
+            
+            const crossedLaser = crossedLeftToRight || crossedRightToLeft || 
+                               partialCrossLeftToRight || partialCrossRightToLeft;
+            
+            // If either in laser or crossed it
+            if (isInLaser || crossedLaser) {
+                // Apply damage - higher instant damage for crossing quickly
+                if (crossedLaser) {
+                    // Higher fixed damage for passing through quickly
+                    this.player.health -= boss.laserDamage;
+                    
+                    // Create a larger explosion at crossing point
+                    const intersectionX = laserOriginX; // Middle of laser
+                    const intersectionY = this.player.y; // At player's current height
+                    this.createSmallExplosion(intersectionX, intersectionY);
+                    
+                    // Stronger screen shake when passing through
+                    this.vibrationStartTime = Date.now();
+                    this.vibrationDuration = 200;
+                    this.vibrationIntensity = 3;
+                } else if (isInLaser) {
+                    // Regular damage for staying in the beam
+                    this.player.health -= boss.laserDamage / 60; // Apply damage per frame (divided by approx 60 fps)
+                    
+                    // Create small explosions around the intersection point
+                    if (Math.random() < 0.2) { // 20% chance per frame to create explosion
+                        // Calculate intersection point in middle of player and laser
+                        const laserIntersectionPointX = Math.max(
+                            Math.min(this.player.x, laserRightEdge), 
+                            laserLeftEdge
+                        );
+                        const laserIntersectionPointY = this.player.y;
+                        
+                        this.createSmallExplosion(
+                            laserIntersectionPointX,
+                            laserIntersectionPointY
+                        );
+                    }
+                    
+                    // Start screen vibration for feedback
+                    this.vibrationStartTime = Date.now();
+                    this.vibrationDuration = 100;
+                    this.vibrationIntensity = 1;
+                }
+                
+                // Check if player is dead
+                if (this.player.health <= 0) {
+                    this.gameOver();
+                }
+            }
+        }
+        
+        // Update player's previous position for the next frame
+        this.player.previousX = this.player.x;
+    }
+
+    createSmallExplosion(x, y) {
+        const numParticles = 15; // Fewer particles for smaller explosion
+        for (let i = 0; i < numParticles; i++) {
+            const angle = (Math.PI * 2 * i) / numParticles;
+            const speed = 1 + Math.random() * 2; // Slower particles
+            this.particles.push({
+                x: x,
+                y: y,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                size: 2 + Math.random() * 2, // Smaller particles
+                color: `hsl(${Math.random() * 30 + 15}, 100%, 50%)`,
+                life: 0.8 // Shorter life
+            });
+        }
+    }
+}
+
+// Initialize the game when the page loads
+window.onload = () => {
+    new Game();
+}; 

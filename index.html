@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plane Shooter Game</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background-color: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out;
+        }
+        
+        canvas.visible {
+            opacity: 1;
+        }
+        
+        #menu {
+            position: fixed;
+            text-align: center;
+            color: white;
+            z-index: 100;
+            opacity: 1;
+            transition: opacity 0.5s ease-in-out, transform 0.5s ease-in-out;
+        }
+        
+        #menu.hidden {
+            opacity: 0;
+            transform: scale(0.95);
+            pointer-events: none;
+        }
+        
+        .level-button {
+            padding: 15px 30px;
+            font-size: 24px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            margin: 10px;
+            transition: transform 0.2s, background-color 0.2s;
+        }
+        
+        .level-button:hover {
+            background-color: #45a049;
+            transform: scale(1.05);
+        }
+
+        #levelModal {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.95);
+            background: rgba(0, 0, 0, 0.9);
+            padding: 30px;
+            border-radius: 15px;
+            color: white;
+            text-align: center;
+            z-index: 200;
+            min-width: 300px;
+            box-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
+            opacity: 0;
+            transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
+        }
+
+        #levelModal.visible {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+        }
+
+        #levelModal h2 {
+            color: #FFD700;
+            margin-bottom: 20px;
+            font-size: 24px;
+        }
+
+        #startLevelButton {
+            padding: 15px 30px;
+            font-size: 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: background-color 0.2s, transform 0.2s;
+        }
+
+        #startLevelButton:hover {
+            background-color: #45a049;
+            transform: scale(1.05);
+        }
+
+        #modalOverlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 150;
+            opacity: 0;
+            transition: opacity 0.3s ease-in-out;
+        }
+
+        #modalOverlay.visible {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <div id="menu">
+        <button class="level-button" data-level="1">Level 1</button>
+    </div>
+    <div id="modalOverlay"></div>
+    <div id="levelModal">
+        <h2>Start Level 1?</h2>
+        <button id="startLevelButton">Start Game</button>
+    </div>
+    <canvas id="gameCanvas"></canvas>
+    <script type="module" src="game.js"></script>
+</body>
+</html> 
